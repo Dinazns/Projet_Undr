@@ -29,22 +29,20 @@ async def connexion_hume(obtenir_image_callback):
             
             with micro_loopback.recorder(samplerate=44100) as recorder:
                 while True:
-                    # Audio
+                    # --- CAPTURE DES FLUX ---
                     donnees_audio = recorder.record(numframes=44100)
                     buffer_audio = io.BytesIO()
                     sf.write(buffer_audio, donnees_audio, 44100, format='WAV', subtype='PCM_16')
                     audio_base64 = base64.b64encode(buffer_audio.getvalue()).decode('utf-8')
                     
-                    # On appelle le Front pour récupérer la dernière image
                     image_actuelle_base64 = obtenir_image_callback()
                     
-                    # Envoi Voix
+                    # --- ENVOI AUX MODÈLES ---
                     await websocket.send(json.dumps({
                         "models": {"prosody": {}},
                         "data": audio_base64
                     }))
                     
-                    # Envoi Visage
                     if image_actuelle_base64:
                         await websocket.send(json.dumps({
                             "models": {"face": {}},
@@ -56,11 +54,11 @@ async def connexion_hume(obtenir_image_callback):
                     emotion_voix_actuelle = None
                     score_voix = 0
                     
+                    # --- RÉCUPÉRATION DES PRÉDICTIONS ---
                     for _ in range(2): 
                         reponse = await websocket.recv()
                         donnees = json.loads(reponse)
                         
-                        # Extraction Visage
                         if 'face' in donnees and 'predictions' in donnees['face']:
                             try:
                                 emotions = donnees['face']['predictions'][0]['emotions']
@@ -70,7 +68,6 @@ async def connexion_hume(obtenir_image_callback):
                                 print(f"👁️ VISAGE : {emotion_visage_actuelle} ({score_visage:.0f}%)")
                             except: pass 
                                 
-                        # Extraction Voix
                         if 'prosody' in donnees and 'predictions' in donnees['prosody']:
                             try:
                                 emotions = donnees['prosody']['predictions'][0]['emotions']
@@ -80,9 +77,19 @@ async def connexion_hume(obtenir_image_callback):
                                 print(f"🗣️ VOIX   : {emotion_voix_actuelle} ({score_voix:.0f}%)")
                             except: pass 
 
-                    # Moteur de Dissonance
+                    # ==========================================================
+                    # MOTEUR DE DISSONANCE (FUSION MULTIMODALE)
+                    # ==========================================================
+                    
                     if emotion_visage_actuelle and emotion_voix_actuelle:
-                        if score_visage > 30 and score_voix > 15:
+                        
+                        # 1. PONDÉRATION : Filtre de confiance (Fiabilité du signal)
+                        # On définit des seuils minimums pour éviter de traiter du "bruit"
+                        SEUIL_MIN_VISAGE = 30
+                        SEUIL_MIN_VOIX = 15
+                        
+                        if score_visage > SEUIL_MIN_VISAGE and score_voix > SEUIL_MIN_VOIX:
+                            
                             def trouver_quadrant(emotion):
                                 for nom_quadrant, liste_emotions in TOUS_LES_GROUPES.items():
                                     if emotion in liste_emotions:
@@ -92,13 +99,31 @@ async def connexion_hume(obtenir_image_callback):
                             quadrant_visage = trouver_quadrant(emotion_visage_actuelle)
                             quadrant_voix = trouver_quadrant(emotion_voix_actuelle)
                             
+                            # 2. DÉTECTION D'INCONGRUENCE (Modèle de Russell Sectoriel)
+                            # On compare la congruence des secteurs (Quadrants)
                             if quadrant_visage != "Inconnu" and quadrant_voix != "Inconnu":
                                 if quadrant_visage != quadrant_voix:
-                                    print("\n" + "⚠️"*25)
-                                    print(f"🚨 ALERTE DISSONANCE SÉVÈRE 🚨")
+                                    
+                                    # 3. LOGIQUE FLOUE : Calcul de l'intensité de la dissonance
+                                    # L'indice de certitude permet de graduer le retour haptique (Vibration)
+                                    indice_certitude = (score_visage + score_voix) / 2
+                                    
+                                    print("\n" + "⚡" + "="*45)
+                                    
+                                    # Catégorisation floue pour définir le retour IoT
+                                    if indice_certitude > 60:
+                                        print(f"🚨 ALERTE : DISSONANCE SÉVÈRE (Certitude: {indice_certitude:.1f}%)")
+                                        # TODO: Envoyer signal "VIBRATION_FORTE" à l'ESP32
+                                    elif indice_certitude > 40:
+                                        print(f"⚠️ ALERTE : DISSONANCE MODÉRÉE (Certitude: {indice_certitude:.1f}%)")
+                                        # TODO: Envoyer signal "VIBRATION_MOYENNE" à l'ESP32
+                                    else:
+                                        print(f"👀 INFO : VIGILANCE REQUISE (Certitude: {indice_certitude:.1f}%)")
+                                        # TODO: Envoyer signal "VIBRATION_LEGERE" à l'ESP32
+                                        
                                     print(f"🎭 Visage : {emotion_visage_actuelle} -> {quadrant_visage}")
                                     print(f"🗣️ Voix   : {emotion_voix_actuelle} -> {quadrant_voix}")
-                                    print("⚠️"*25 + "\n")
+                                    print("="*45 + "⚡" + "\n")
                                     
     except Exception as e:
         print(f"⚠️ Erreur de connexion : {e}")

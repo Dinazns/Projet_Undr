@@ -3,5 +3,6 @@ numpy<2.0.0
 Pillow
 python-dotenv
 hume
-soundcard 
+soundcard
 soundfile
+websockets
