@@ -1,0 +1,12 @@
+{
+  "name": "undr-frontend",
+  "version": "1.0.0",
+  "description": "Undr Assistant Electron HUD",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}

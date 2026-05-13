@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Undr - Dashboard de Session</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard-container">
+        <header class="glass-panel header-panel">
+            <div class="title-group">
+                <div class="led api-led green"></div>
+                <h1>Bilan de Téléconsultation</h1>
+            </div>
+            <button id="btn-close" class="btn-secondary">Fermer l'application</button>
+        </header>
+
+        <main class="dashboard-grid">
+            <section class="glass-panel chart-section">
+                <div class="section-header">
+                    <h2>Timeline des Dissonances Émotionnelles</h2>
+                    <span class="badge" id="alert-counter">0 alerte(s)</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="dissonanceChart"></canvas>
+                </div>
+            </section>
+
+            <section class="glass-panel notes-section">
+                <h2>Notes Cliniques</h2>
+                <textarea id="clinical-notes" placeholder="Saisissez vos observations post-séance ici..."></textarea>
+                <div class="actions">
+                    <button id="btn-save" class="btn-primary">Enregistrer le compte-rendu</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

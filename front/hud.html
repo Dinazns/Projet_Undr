@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Undr HUD</title>
+    <link rel="stylesheet" href="hud.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Main container -->
+    <div id="app-container" class="state-waiting">
+        
+        <!-- Interaction Layer for Move & Resize -->
+        <div class="interaction-layer">
+            <!-- Move Edges (Inside the resize edges) -->
+            <div class="move-edge move-n" data-action="move"></div>
+            <div class="move-edge move-s" data-action="move"></div>
+            <div class="move-edge move-w" data-action="move"></div>
+            <div class="move-edge move-e" data-action="move"></div>
+            
+            <!-- Resize Edges -->
+            <div class="interact-edge edge-n" data-action="resize-n"></div>
+            <div class="interact-edge edge-s" data-action="resize-s"></div>
+            <div class="interact-edge edge-w" data-action="resize-w"></div>
+            <div class="interact-edge edge-e" data-action="resize-e"></div>
+            
+            <div class="interact-edge edge-nw" data-action="resize-nw"></div>
+            <div class="interact-edge edge-ne" data-action="resize-ne"></div>
+            <div class="interact-edge edge-sw" data-action="resize-sw"></div>
+            <div class="interact-edge edge-se" data-action="resize-se"></div>
+        </div>
+
+        <!-- Frame / Border representing the capture area -->
+        <div class="capture-frame"></div>
+
+        <!-- STATE 1: Waiting -->
+        <div id="waiting-screen" class="screen">
+            <div class="glass-panel main-panel">
+                <h1>Consentement requis</h1>
+                <p>L'assistant analysera les émotions dans ce cadre.</p>
+                <button id="btn-start">Démarrer l'assistance</button>
+            </div>
+        </div>
+
+        <!-- STATE 2: Active (Mini widget) -->
+        <div id="active-screen" class="screen hidden">
+            <!-- Invisible area that passes clicks through -->
+            <div class="click-through-area" id="click-through-area"></div>
+            
+            <div class="mini-widget glass-panel" id="mini-widget">
+                <div class="drag-handle" id="drag-handle" title="Déplacer">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>
+                </div>
+                
+                <div class="led-container">
+                    <div class="led-group">
+                        <div class="led api-led green"></div>
+                        <span>API</span>
+                    </div>
+                    <div class="led-group">
+                        <div class="led bracelet-led green"></div>
+                        <span>Capteur</span>
+                    </div>
+                </div>
+
+                <button id="btn-stop" class="icon-btn" title="Arrêter">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const waitingScreen = document.getElementById('waiting-screen');
+        const activeScreen = document.getElementById('active-screen');
+        const appContainer = document.getElementById('app-container');
+
+        let ws;
+
+        btnStart.addEventListener('click', () => {
+            waitingScreen.classList.add('hidden');
+            activeScreen.classList.remove('hidden');
+            appContainer.classList.remove('state-waiting');
+            appContainer.classList.add('state-active');
+            window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+
+            // Clear previous session data
+            localStorage.removeItem('dissonanceData');
+
+            // Connexion au Backend FastAPI
+            ws = new WebSocket('ws://127.0.0.1:8000/ws');
+
+            ws.onopen = () => {
+                console.log("Connecté au moteur Python !");
+                // Mettre à jour l'API LED
+                document.querySelector('.api-led').classList.remove('red');
+                document.querySelector('.api-led').classList.add('green');
+                
+                // Envoyer la Bounding Box initiale
+                envoyerCoordonnees();
+                // Actualiser à intervalles réguliers au cas où
+                setInterval(envoyerCoordonnees, 500);
+            };
+
+            ws.onerror = () => {
+                document.querySelector('.api-led').classList.remove('green');
+                document.querySelector('.api-led').classList.add('red');
+            };
+
+            ws.onclose = () => {
+                document.querySelector('.api-led').classList.remove('green');
+                document.querySelector('.api-led').classList.add('red');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'dissonance') {
+                    // Mettre à jour la LED du capteur s'il y a des données
+                    document.querySelector('.bracelet-led').classList.add('green');
+
+                    // Sauvegarder les données pour le dashboard (localStorage partagé dans Electron)
+                    const dissonanceData = JSON.parse(localStorage.getItem('dissonanceData') || '[]');
+                    const date = new Date();
+                    dissonanceData.push({
+                        time: date.toLocaleTimeString('fr-FR', {minute: '2-digit', second: '2-digit'}),
+                        value: Math.round(data.value),
+                        isAlert: data.isAlert,
+                        face: data.face,
+                        voice: data.voice
+                    });
+                    localStorage.setItem('dissonanceData', JSON.stringify(dissonanceData));
+                }
+            };
+        });
+
+        function envoyerCoordonnees() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                window.electronAPI.getBounds().then(bounds => {
+                    ws.send(JSON.stringify(bounds));
+                });
+            }
+        }
+
+        btnStop.addEventListener('click', () => {
+            window.electronAPI.stopSession();
+        });
+
+        // Universal Interaction Logic (Drag & Resize via IPC)
+        let currentAction = null;
+        let startScreenX, startScreenY;
+
+        const interactables = document.querySelectorAll('.interact-edge, .move-edge, #mini-widget, .main-panel');
+        
+        interactables.forEach(el => {
+            el.addEventListener('pointerdown', (e) => {
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+                
+                const action = el.dataset.action || (el.id === 'mini-widget' || el.classList.contains('main-panel') ? 'move' : null);
+                if (!action) return;
+
+                currentAction = action;
+                startScreenX = e.screenX;
+                startScreenY = e.screenY;
+
+                el.setPointerCapture(e.pointerId);
+                
+                if (appContainer.classList.contains('state-active')) {
+                    window.electronAPI.setIgnoreMouseEvents(false);
+                }
+            });
+
+            el.addEventListener('pointermove', (e) => {
+                if (!currentAction) return;
+                
+                const deltaX = e.screenX - startScreenX;
+                const deltaY = e.screenY - startScreenY;
+                
+                startScreenX = e.screenX;
+                startScreenY = e.screenY;
+
+                window.electronAPI.updateWindow(currentAction, deltaX, deltaY);
+            });
+
+            el.addEventListener('pointerup', (e) => {
+                if (currentAction) {
+                    currentAction = null;
+                    el.releasePointerCapture(e.pointerId);
+                    
+                    if (appContainer.classList.contains('state-active') && !el.matches(':hover')) {
+                        window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+                    }
+                }
+            });
+
+            // Handle ignoring mouse events in State 2
+            el.addEventListener('pointerenter', () => {
+                if (appContainer.classList.contains('state-active') && !currentAction) {
+                    window.electronAPI.setIgnoreMouseEvents(false);
+                }
+            });
+
+            el.addEventListener('pointerleave', () => {
+                if (appContainer.classList.contains('state-active') && !currentAction) {
+                    window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+                }
+            });
+        });
+        
+    </script>
+</body>
+</html>

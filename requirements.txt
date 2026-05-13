@@ -6,3 +6,5 @@ hume
 soundcard
 soundfile
 websockets
+fastapi
+uvicorn

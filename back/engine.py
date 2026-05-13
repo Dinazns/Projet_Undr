@@ -1,4 +1,3 @@
-# engine.py
 import asyncio
 import websockets
 import json
@@ -7,11 +6,48 @@ import soundfile as sf
 import io
 import base64
 import warnings
-from back.config import HUME_API_KEY, TOUS_LES_GROUPES
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import uvicorn
+from mss import mss
+from PIL import Image
+
+try:
+    from back.config import HUME_API_KEY, TOUS_LES_GROUPES
+except ImportError:
+    from config import HUME_API_KEY, TOUS_LES_GROUPES
 
 warnings.filterwarnings("ignore", message="data discontinuity in recording")
 
-async def connexion_hume(obtenir_image_callback):
+app = FastAPI()
+
+# Variables globales pour le HUD
+hud_coords = {"x": 0, "y": 0, "w": 0, "h": 0}
+sct = mss()
+
+def get_hud_image():
+    """Capture l'écran à l'intérieur de la Bounding Box du HUD Electron"""
+    if hud_coords["w"] <= 0 or hud_coords["h"] <= 0:
+        return None
+    
+    try:
+        screenshot = sct.grab({
+            "top": int(hud_coords["y"]), 
+            "left": int(hud_coords["x"]), 
+            "width": int(hud_coords["w"]), 
+            "height": int(hud_coords["h"])
+        })
+        img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
+        img.thumbnail((250, 250))
+        
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=70)
+        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+    except Exception as e:
+        print(f"Erreur de capture d'écran: {e}")
+        return None
+
+
+async def connexion_hume(electron_ws: WebSocket):
     uri = f"wss://api.hume.ai/v0/stream/models?apikey={HUME_API_KEY}"
     print("⏳ Connexion au serveur Hume AI...")
     
@@ -24,27 +60,31 @@ async def connexion_hume(obtenir_image_callback):
         return
     
     try:
-        async with websockets.connect(uri) as websocket:
-            print("✅ LIGNE DIRECTE OUVERTE (VISAGE ET VOIX) !")
+        async with websockets.connect(uri) as hume_ws:
+            print("✅ LIGNE DIRECTE OUVERTE AVEC HUME !")
             
             with micro_loopback.recorder(samplerate=44100) as recorder:
                 while True:
+                    # Vérifier si Electron est toujours connecté
+                    if electron_ws.client_state.name == "DISCONNECTED":
+                        break
+                        
                     # --- CAPTURE DES FLUX ---
                     donnees_audio = recorder.record(numframes=44100)
                     buffer_audio = io.BytesIO()
                     sf.write(buffer_audio, donnees_audio, 44100, format='WAV', subtype='PCM_16')
                     audio_base64 = base64.b64encode(buffer_audio.getvalue()).decode('utf-8')
                     
-                    image_actuelle_base64 = obtenir_image_callback()
+                    image_actuelle_base64 = get_hud_image()
                     
                     # --- ENVOI AUX MODÈLES ---
-                    await websocket.send(json.dumps({
+                    await hume_ws.send(json.dumps({
                         "models": {"prosody": {}},
                         "data": audio_base64
                     }))
                     
                     if image_actuelle_base64:
-                        await websocket.send(json.dumps({
+                        await hume_ws.send(json.dumps({
                             "models": {"face": {}},
                             "data": image_actuelle_base64
                         }))
@@ -56,7 +96,7 @@ async def connexion_hume(obtenir_image_callback):
                     
                     # --- RÉCUPÉRATION DES PRÉDICTIONS ---
                     for _ in range(2): 
-                        reponse = await websocket.recv()
+                        reponse = await hume_ws.recv()
                         donnees = json.loads(reponse)
                         
                         if 'face' in donnees and 'predictions' in donnees['face']:
@@ -65,7 +105,6 @@ async def connexion_hume(obtenir_image_callback):
                                 dominante = max(emotions, key=lambda x: x['score'])
                                 emotion_visage_actuelle = dominante['name']
                                 score_visage = dominante['score'] * 100
-                                print(f"👁️ VISAGE : {emotion_visage_actuelle} ({score_visage:.0f}%)")
                             except: pass 
                                 
                         if 'prosody' in donnees and 'predictions' in donnees['prosody']:
@@ -74,7 +113,6 @@ async def connexion_hume(obtenir_image_callback):
                                 dominante = max(emotions, key=lambda x: x['score'])
                                 emotion_voix_actuelle = dominante['name']
                                 score_voix = dominante['score'] * 100
-                                print(f"🗣️ VOIX   : {emotion_voix_actuelle} ({score_voix:.0f}%)")
                             except: pass 
 
                     # ==========================================================
@@ -82,14 +120,10 @@ async def connexion_hume(obtenir_image_callback):
                     # ==========================================================
                     
                     if emotion_visage_actuelle and emotion_voix_actuelle:
-                        
-                        # 1. PONDÉRATION : Filtre de confiance (Fiabilité du signal)
-                        # On définit des seuils minimums pour éviter de traiter du "bruit"
                         SEUIL_MIN_VISAGE = 30
                         SEUIL_MIN_VOIX = 15
                         
                         if score_visage > SEUIL_MIN_VISAGE and score_voix > SEUIL_MIN_VOIX:
-                            
                             def trouver_quadrant(emotion):
                                 for nom_quadrant, liste_emotions in TOUS_LES_GROUPES.items():
                                     if emotion in liste_emotions:
@@ -99,36 +133,51 @@ async def connexion_hume(obtenir_image_callback):
                             quadrant_visage = trouver_quadrant(emotion_visage_actuelle)
                             quadrant_voix = trouver_quadrant(emotion_voix_actuelle)
                             
-                            # 2. DÉTECTION D'INCONGRUENCE (Modèle de Russell Sectoriel)
-                            # On compare la congruence des secteurs (Quadrants)
                             if quadrant_visage != "Inconnu" and quadrant_voix != "Inconnu":
+                                dissonance_value = 0
+                                is_alert = False
+                                
                                 if quadrant_visage != quadrant_voix:
-                                    
-                                    # 3. LOGIQUE FLOUE : Calcul de l'intensité de la dissonance
-                                    # L'indice de certitude permet de graduer le retour haptique (Vibration)
                                     indice_certitude = (score_visage + score_voix) / 2
-                                    
-                                    print("\n" + "⚡" + "="*45)
-                                    
-                                    # Catégorisation floue pour définir le retour IoT
-                                    if indice_certitude > 60:
-                                        print(f"🚨 ALERTE : DISSONANCE SÉVÈRE (Certitude: {indice_certitude:.1f}%)")
-                                        # TODO: Envoyer signal "VIBRATION_FORTE" à l'ESP32
-                                    elif indice_certitude > 40:
-                                        print(f"⚠️ ALERTE : DISSONANCE MODÉRÉE (Certitude: {indice_certitude:.1f}%)")
-                                        # TODO: Envoyer signal "VIBRATION_MOYENNE" à l'ESP32
-                                    else:
-                                        print(f"👀 INFO : VIGILANCE REQUISE (Certitude: {indice_certitude:.1f}%)")
-                                        # TODO: Envoyer signal "VIBRATION_LEGERE" à l'ESP32
-                                        
-                                    print(f"🎭 Visage : {emotion_visage_actuelle} -> {quadrant_visage}")
-                                    print(f"🗣️ Voix   : {emotion_voix_actuelle} -> {quadrant_voix}")
-                                    print("="*45 + "⚡" + "\n")
-                                    
+                                    dissonance_value = indice_certitude
+                                    is_alert = indice_certitude > 60
+                                
+                                # Envoi à Electron
+                                await electron_ws.send_json({
+                                    "type": "dissonance",
+                                    "value": dissonance_value,
+                                    "isAlert": is_alert,
+                                    "face": f"{emotion_visage_actuelle} ({score_visage:.0f}%)",
+                                    "voice": f"{emotion_voix_actuelle} ({score_voix:.0f}%)"
+                                })
+                                
     except Exception as e:
-        print(f"⚠️ Erreur de connexion : {e}")
+        print(f"⚠️ Erreur Hume : {e}")
 
-def lancer_cerveau(obtenir_image_callback):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(connexion_hume(obtenir_image_callback))
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    print("🔌 Client Electron (HUD) connecté au WebSocket.")
+    
+    # Démarrer la boucle Hume en tâche de fond pour cette session
+    task = asyncio.create_task(connexion_hume(websocket))
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if "x" in data and "y" in data and "w" in data and "h" in data:
+                global hud_coords
+                hud_coords = {
+                    "x": data["x"],
+                    "y": data["y"],
+                    "w": data["w"],
+                    "h": data["h"]
+                }
+    except WebSocketDisconnect:
+        print("🔌 Client Electron déconnecté.")
+        task.cancel()
+
+if __name__ == "__main__":
+    print("🚀 Serveur FastAPI démarré sur http://127.0.0.1:8000")
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")
