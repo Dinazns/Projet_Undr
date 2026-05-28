@@ -18,8 +18,9 @@
 body {
     background-color: var(--bg-base);
     color: var(--text-main);
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
 }
@@ -49,7 +50,7 @@ body::before {
     display: flex;
     flex-direction: column;
     padding: 24px;
-    height: 100%;
+    min-height: 100vh;
     gap: 24px;
 }
 
@@ -125,6 +126,23 @@ h2 {
     position: relative;
     width: 100%;
     height: 100%;
+}
+
+.secondary-charts-grid {
+    display: flex;
+    gap: 24px;
+    flex: 0.8;
+}
+
+.secondary-charts-grid > .chart-section {
+    flex: 1;
+}
+
+.doughnut-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 150px;
 }
 
 .notes-section {

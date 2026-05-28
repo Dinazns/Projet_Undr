@@ -6,6 +6,7 @@ import soundfile as sf
 import io
 import base64
 import warnings
+from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 from mss import mss
@@ -105,6 +106,7 @@ async def connexion_hume(electron_ws: WebSocket):
                                 dominante = max(emotions, key=lambda x: x['score'])
                                 emotion_visage_actuelle = dominante['name']
                                 score_visage = dominante['score'] * 100
+                                print(f"👁️ VISAGE : {emotion_visage_actuelle} ({score_visage:.0f}%)")
                             except: pass 
                                 
                         if 'prosody' in donnees and 'predictions' in donnees['prosody']:
@@ -113,6 +115,7 @@ async def connexion_hume(electron_ws: WebSocket):
                                 dominante = max(emotions, key=lambda x: x['score'])
                                 emotion_voix_actuelle = dominante['name']
                                 score_voix = dominante['score'] * 100
+                                print(f"🗣️ VOIX   : {emotion_voix_actuelle} ({score_voix:.0f}%)")
                             except: pass 
 
                     # ==========================================================
@@ -135,24 +138,46 @@ async def connexion_hume(electron_ws: WebSocket):
                             
                             if quadrant_visage != "Inconnu" and quadrant_voix != "Inconnu":
                                 dissonance_value = 0
-                                is_alert = False
+                                alert_level = "NONE"
                                 
                                 if quadrant_visage != quadrant_voix:
                                     indice_certitude = (score_visage + score_voix) / 2
                                     dissonance_value = indice_certitude
-                                    is_alert = indice_certitude > 60
+                                    
+                                    print("\n" + "⚡" + "="*45)
+                                    if indice_certitude > 60:
+                                        alert_level = "SEVERE"
+                                        print(f"🚨 ALERTE : DISSONANCE SÉVÈRE (Certitude: {indice_certitude:.1f}%)")
+                                    elif indice_certitude > 40:
+                                        alert_level = "MODERATE"
+                                        print(f"⚠️ ALERTE : DISSONANCE MODÉRÉE (Certitude: {indice_certitude:.1f}%)")
+                                    else:
+                                        alert_level = "VIGILANCE"
+                                        print(f"👀 INFO : VIGILANCE REQUISE (Certitude: {indice_certitude:.1f}%)")
+                                        
+                                    print(f"🎭 Visage : {emotion_visage_actuelle} -> {quadrant_visage}")
+                                    print(f"🗣️ Voix   : {emotion_voix_actuelle} -> {quadrant_voix}")
+                                    print("="*45 + "⚡" + "\n")
                                 
                                 # Envoi à Electron
                                 await electron_ws.send_json({
                                     "type": "dissonance",
+                                    "timestamp": datetime.now().strftime("%H:%M:%S"),
                                     "value": dissonance_value,
-                                    "isAlert": is_alert,
+                                    "alert_level": alert_level,
                                     "face": f"{emotion_visage_actuelle} ({score_visage:.0f}%)",
-                                    "voice": f"{emotion_voix_actuelle} ({score_voix:.0f}%)"
+                                    "voice": f"{emotion_voix_actuelle} ({score_voix:.0f}%)",
+                                    "quadrant_face": quadrant_visage
                                 })
                                 
     except Exception as e:
         print(f"⚠️ Erreur Hume : {e}")
+
+def vibrer_bracelet(intensite, type_vibration):
+    """
+    Fonction factice pour simuler l'envoi d'une commande de vibration au bracelet.
+    """
+    print(f"📳 TEST BRACELET - Type: {type_vibration} | Intensité: {intensite}/100")
 
 
 @app.websocket("/ws")
@@ -166,7 +191,9 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_json()
-            if "x" in data and "y" in data and "w" in data and "h" in data:
+            if "type" in data and data["type"] == "test_vibration":
+                vibrer_bracelet(data.get("intensity", 50), data.get("test_type", "inconnu"))
+            elif "x" in data and "y" in data and "w" in data and "h" in data:
                 global hud_coords
                 hud_coords = {
                     "x": data["x"],

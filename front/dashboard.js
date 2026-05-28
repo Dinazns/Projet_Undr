@@ -2,6 +2,27 @@
 // We will structure it so it's ready to receive data via ws://
 
 document.addEventListener('DOMContentLoaded', () => {
+    let currentLanguage = "fr";
+
+    function translateEmotion(emotionString) {
+        if (!emotionString || typeof emotionString !== 'string') return emotionString;
+        
+        // Extraction du nom de l'émotion et du pourcentage (ex: "Joy (85%)" -> "Joy", " (85%)")
+        const match = emotionString.match(/^(.+?)( \(\d+%\))?$/);
+        if (match) {
+            const englishName = match[1];
+            const percentage = match[2] || '';
+            
+            if (window.translations && window.translations[currentLanguage]) {
+                const translated = window.translations[currentLanguage][englishName];
+                if (translated) {
+                    return translated + percentage;
+                }
+            }
+        }
+        return emotionString;
+    }
+
     const ctx = document.getElementById('dissonanceChart').getContext('2d');
     const alertCounter = document.getElementById('alert-counter');
     let totalAlerts = 0;
@@ -50,9 +71,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     cornerRadius: 8,
                     displayColors: false,
                     callbacks: {
+                        title: function(context) {
+                            return context[0].label;
+                        },
                         label: function(context) {
-                            return `Dissonance: ${context.parsed.y}%`;
+                            const raw = context.raw;
+                            return [
+                                `Dissonance : ${context.parsed.y}%`,
+                                `👁️ Visage : ${translateEmotion(raw.face) || 'N/A'}`,
+                                `🗣️ Voix : ${translateEmotion(raw.voice) || 'N/A'}`
+                            ];
                         }
+                    }
+                },
+                zoom: {
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x'
+                    },
+                    pan: {
+                        enabled: true,
+                        mode: 'x'
                     }
                 }
             },
@@ -86,20 +126,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const dissonanceChart = new Chart(ctx, config);
 
-    // Prepare WebSocket logic (To be connected in Step 3)
-    function addDataPoint(time, value, isAlert) {
+    // Valence Chart Configuration
+    let positiveCount = 0;
+    let negativeCount = 0;
+    const valenceCtx = document.getElementById('valenceChart').getContext('2d');
+    const valenceChart = new Chart(valenceCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Positif', 'Négatif'],
+            datasets: [{
+                data: [0, 0],
+                backgroundColor: [
+                    '#deff9a', 
+                    'rgba(255, 255, 255, 0.1)'
+                ],
+                borderWidth: 0,
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '70%',
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(255, 255, 255, 0.6)' }
+                }
+            }
+        }
+    });
+
+    function addDataPoint(time, value, alert_level, face, voice, quadrant_face) {
         const dataset = dissonanceChart.data.datasets[0];
         
         dissonanceChart.data.labels.push(time);
-        dataset.data.push(value);
+        dataset.data.push({x: time, y: value, face: face, voice: voice});
 
         // Styling points based on alert status
-        if (isAlert) {
-            dataset.pointBackgroundColor.push('#ff5c5c'); // Red accent
-            dataset.pointRadius.push(6); // Larger point
-            
-            // Update counter
+        if (alert_level === "SEVERE") {
+            dataset.pointBackgroundColor.push('#ff5c5c'); // Red
+            dataset.pointRadius.push(6);
             totalAlerts++;
+        } else if (alert_level === "MODERATE") {
+            dataset.pointBackgroundColor.push('#ffa500'); // Orange
+            dataset.pointRadius.push(5);
+            totalAlerts++;
+        } else if (alert_level === "VIGILANCE") {
+            dataset.pointBackgroundColor.push('#ffff00'); // Yellow
+            dataset.pointRadius.push(4);
+        } else {
+            dataset.pointBackgroundColor.push('#deff9a'); // Normal point
+            dataset.pointRadius.push(0); // Hidden unless hover
+        }
+
+        // Update counter only for SEVERE and MODERATE
+        if (alert_level === "SEVERE" || alert_level === "MODERATE") {
             alertCounter.innerText = `${totalAlerts} alerte(s)`;
             
             // Pulse effect on badge
@@ -107,17 +189,16 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
                 alertCounter.style.transform = 'scale(1)';
             }, 200);
-        } else {
-            dataset.pointBackgroundColor.push('#deff9a'); // Normal point
-            dataset.pointRadius.push(0); // Hidden unless hover
         }
 
-        // Keep only last 50 points to avoid clutter
-        if (dissonanceChart.data.labels.length > 50) {
-            dissonanceChart.data.labels.shift();
-            dataset.data.shift();
-            dataset.pointBackgroundColor.shift();
-            dataset.pointRadius.shift();
+        if (quadrant_face) {
+            if (quadrant_face.includes('Positif')) {
+                positiveCount++;
+            } else if (quadrant_face.includes('Négatif')) {
+                negativeCount++;
+            }
+            valenceChart.data.datasets[0].data = [positiveCount, negativeCount];
+            valenceChart.update();
         }
 
         dissonanceChart.update();
@@ -129,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedDataStr) {
         const savedData = JSON.parse(savedDataStr);
         savedData.forEach(point => {
-            addDataPoint(point.time, point.value, point.isAlert);
+            addDataPoint(point.time, point.value, point.alert_level, point.face, point.voice, point.quadrant_face);
         });
         
         // Optional: clear local storage so the next session starts fresh

@@ -66,6 +66,14 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
     }
 });
 
+// Custom exact bounds setting for persistence
+ipcMain.on('set-bounds', (event, bounds) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && bounds) {
+        win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.w, height: bounds.h });
+    }
+});
+
 // Custom robust move and resize for transparent frameless windows
 ipcMain.on('update-window', (event, action, deltaX, deltaY) => {
     const win = BrowserWindow.fromWebContents(event.sender);

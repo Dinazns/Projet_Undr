@@ -264,3 +264,89 @@ button:active {
     box-shadow: none;
     transform: none;
 }
+
+#btn-settings:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-main);
+}
+
+/* Settings Modal */
+#settings-modal {
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+}
+
+.settings-panel {
+    width: 300px;
+    padding: 24px;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+}
+
+.settings-panel h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.settings-section h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    color: var(--text-dim);
+}
+
+.settings-group {
+    margin-bottom: 16px;
+}
+
+.settings-group label {
+    font-size: 13px;
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-main);
+}
+
+.settings-group input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent-green);
+}
+
+.settings-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.btn-test-severe {
+    background-color: var(--accent-red);
+    color: #111;
+}
+.btn-test-severe:hover {
+    box-shadow: 0 4px 16px rgba(255, 92, 92, 0.25);
+}
+
+.btn-test-vigilance {
+    background-color: #ffa500;
+    color: #111;
+}
+.btn-test-vigilance:hover {
+    box-shadow: 0 4px 16px rgba(255, 165, 0, 0.25);
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--text-main);
+    margin-top: 16px;
+}
+.btn-outline:hover {
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: none;
+}

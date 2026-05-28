@@ -66,151 +66,36 @@
                     </div>
                 </div>
 
+                <button id="btn-settings" class="icon-btn" title="Paramètres">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
                 <button id="btn-stop" class="icon-btn" title="Arrêter">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
         </div>
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="screen hidden">
+            <div class="glass-panel settings-panel">
+                <h2>Paramètres</h2>
+                
+                <div class="settings-section">
+                    <h3>Test du Bracelet</h3>
+                    <div class="settings-group">
+                        <label for="vibration-intensity">Puissance de vibration par défaut (<span id="intensity-val">50</span>)</label>
+                        <input type="range" id="vibration-intensity" min="0" max="100" value="50">
+                    </div>
+                    <div class="settings-actions">
+                        <button id="btn-test-severe" class="btn-test-severe">Tester Alerte Sévère</button>
+                        <button id="btn-test-vigilance" class="btn-test-vigilance">Tester Vigilance</button>
+                    </div>
+                </div>
+                
+                <button id="btn-close-settings" class="btn-outline">Fermer</button>
+            </div>
+        </div>
     </div>
 
-    <script>
-        const btnStart = document.getElementById('btn-start');
-        const btnStop = document.getElementById('btn-stop');
-        const waitingScreen = document.getElementById('waiting-screen');
-        const activeScreen = document.getElementById('active-screen');
-        const appContainer = document.getElementById('app-container');
-
-        let ws;
-
-        btnStart.addEventListener('click', () => {
-            waitingScreen.classList.add('hidden');
-            activeScreen.classList.remove('hidden');
-            appContainer.classList.remove('state-waiting');
-            appContainer.classList.add('state-active');
-            window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
-
-            // Clear previous session data
-            localStorage.removeItem('dissonanceData');
-
-            // Connexion au Backend FastAPI
-            ws = new WebSocket('ws://127.0.0.1:8000/ws');
-
-            ws.onopen = () => {
-                console.log("Connecté au moteur Python !");
-                // Mettre à jour l'API LED
-                document.querySelector('.api-led').classList.remove('red');
-                document.querySelector('.api-led').classList.add('green');
-                
-                // Envoyer la Bounding Box initiale
-                envoyerCoordonnees();
-                // Actualiser à intervalles réguliers au cas où
-                setInterval(envoyerCoordonnees, 500);
-            };
-
-            ws.onerror = () => {
-                document.querySelector('.api-led').classList.remove('green');
-                document.querySelector('.api-led').classList.add('red');
-            };
-
-            ws.onclose = () => {
-                document.querySelector('.api-led').classList.remove('green');
-                document.querySelector('.api-led').classList.add('red');
-            };
-
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'dissonance') {
-                    // Mettre à jour la LED du capteur s'il y a des données
-                    document.querySelector('.bracelet-led').classList.add('green');
-
-                    // Sauvegarder les données pour le dashboard (localStorage partagé dans Electron)
-                    const dissonanceData = JSON.parse(localStorage.getItem('dissonanceData') || '[]');
-                    const date = new Date();
-                    dissonanceData.push({
-                        time: date.toLocaleTimeString('fr-FR', {minute: '2-digit', second: '2-digit'}),
-                        value: Math.round(data.value),
-                        isAlert: data.isAlert,
-                        face: data.face,
-                        voice: data.voice
-                    });
-                    localStorage.setItem('dissonanceData', JSON.stringify(dissonanceData));
-                }
-            };
-        });
-
-        function envoyerCoordonnees() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                window.electronAPI.getBounds().then(bounds => {
-                    ws.send(JSON.stringify(bounds));
-                });
-            }
-        }
-
-        btnStop.addEventListener('click', () => {
-            window.electronAPI.stopSession();
-        });
-
-        // Universal Interaction Logic (Drag & Resize via IPC)
-        let currentAction = null;
-        let startScreenX, startScreenY;
-
-        const interactables = document.querySelectorAll('.interact-edge, .move-edge, #mini-widget, .main-panel');
-        
-        interactables.forEach(el => {
-            el.addEventListener('pointerdown', (e) => {
-                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-                
-                const action = el.dataset.action || (el.id === 'mini-widget' || el.classList.contains('main-panel') ? 'move' : null);
-                if (!action) return;
-
-                currentAction = action;
-                startScreenX = e.screenX;
-                startScreenY = e.screenY;
-
-                el.setPointerCapture(e.pointerId);
-                
-                if (appContainer.classList.contains('state-active')) {
-                    window.electronAPI.setIgnoreMouseEvents(false);
-                }
-            });
-
-            el.addEventListener('pointermove', (e) => {
-                if (!currentAction) return;
-                
-                const deltaX = e.screenX - startScreenX;
-                const deltaY = e.screenY - startScreenY;
-                
-                startScreenX = e.screenX;
-                startScreenY = e.screenY;
-
-                window.electronAPI.updateWindow(currentAction, deltaX, deltaY);
-            });
-
-            el.addEventListener('pointerup', (e) => {
-                if (currentAction) {
-                    currentAction = null;
-                    el.releasePointerCapture(e.pointerId);
-                    
-                    if (appContainer.classList.contains('state-active') && !el.matches(':hover')) {
-                        window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
-                    }
-                }
-            });
-
-            // Handle ignoring mouse events in State 2
-            el.addEventListener('pointerenter', () => {
-                if (appContainer.classList.contains('state-active') && !currentAction) {
-                    window.electronAPI.setIgnoreMouseEvents(false);
-                }
-            });
-
-            el.addEventListener('pointerleave', () => {
-                if (appContainer.classList.contains('state-active') && !currentAction) {
-                    window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
-                }
-            });
-        });
-        
-    </script>
+    <script src="hud.js"></script>
 </body>
 </html>
