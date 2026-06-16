@@ -8,7 +8,10 @@
 html, body, #root {
   width: 100%;
   height: 100%;
-  overflow: hidden;
+}
+
+#root {
+  overflow: auto;
 }
 
 body {
@@ -17,6 +20,6 @@ body {
   color: #ffffff;
 }
 
-button {
+button, a, input, textarea, select, [role="button"] {
   cursor: pointer;
 }

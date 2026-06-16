@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useElectron } from '../hooks/useElectron'
 import { useWebSocket } from '../hooks/useWebSocket'
-import InteractionLayer from '../components/InteractionLayer'
 import MiniWidget from '../components/MiniWidget'
 import SettingsModal from '../components/SettingsModal'
 import { store } from '../lib/store'
@@ -55,23 +54,16 @@ export default function Hud() {
     setPhase('active')
     store.clearDissonances()
     if (electron) {
-      electron.setIgnoreMouseEvents(true, { forward: true })
+      electron.openDashboard()
     }
   }
 
-  const handleBoundsChange = useCallback((bounds) => {
-    store.setHudBounds(bounds)
-    wsSend(bounds)
-  }, [wsSend])
-
   const handleSettingsOpen = () => {
     setShowSettings(true)
-    if (electron) electron.setIgnoreMouseEvents(false)
   }
 
   const handleSettingsClose = () => {
     setShowSettings(false)
-    if (electron) electron.setIgnoreMouseEvents(true, { forward: true })
   }
 
   const handleTestVibration = (type, intensity) => {
@@ -88,8 +80,6 @@ export default function Hud() {
 
   return (
     <div className={`hud-container ${phase === 'active' ? 'hud-active' : ''}`}>
-      <InteractionLayer onBoundsChange={handleBoundsChange} />
-
       {/* Cadre de capture */}
       <div className="capture-frame" />
 

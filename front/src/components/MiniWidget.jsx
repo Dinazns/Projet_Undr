@@ -1,12 +1,42 @@
+import { useRef, useCallback } from 'react'
 import Led from './Led'
 
 export default function MiniWidget({ onSettings, onStop, apiStatus, sensorStatus }) {
   const apiColor = apiStatus === 'connected' ? 'green' : 'red'
   const sensorColor = sensorStatus ? 'green' : 'red'
+  const draggingRef = useRef(false)
+  const startRef = useRef({ x: 0, y: 0 })
+
+  const handlePointerDown = useCallback((e) => {
+    if (!window.electronAPI) return
+    draggingRef.current = true
+    startRef.current = { x: e.screenX, y: e.screenY }
+    e.target.setPointerCapture(e.pointerId)
+    window.electronAPI.setIgnoreMouseEvents(false)
+  }, [])
+
+  const handlePointerMove = useCallback((e) => {
+    if (!draggingRef.current || !window.electronAPI) return
+    const deltaX = e.screenX - startRef.current.x
+    const deltaY = e.screenY - startRef.current.y
+    startRef.current = { x: e.screenX, y: e.screenY }
+    window.electronAPI.updateWindow('move', deltaX, deltaY)
+  }, [])
+
+  const handlePointerUp = useCallback((e) => {
+    draggingRef.current = false
+    e.target.releasePointerCapture(e.pointerId)
+  }, [])
 
   return (
     <div className="mini-widget glass-panel">
-      <div className="drag-handle" title="Déplacer">
+      <div
+        className="drag-handle"
+        title="Déplacer"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="9" cy="12" r="1" />
           <circle cx="9" cy="5" r="1" />
