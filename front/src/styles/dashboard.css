@@ -4,11 +4,30 @@
   display: flex;
   flex-direction: column;
   padding: 24px;
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
   gap: 24px;
   font-family: 'Inter', sans-serif;
   background-color: #0a0a0a;
   color: #fff;
+}
+
+.dashboard-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dashboard-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.dashboard-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.dashboard-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 body::before {
@@ -151,7 +170,8 @@ textarea {
   transition: all 0.2s;
   line-height: 1.5;
   font-family: 'Inter', sans-serif;
-  min-height: 120px;
+  min-height: 250px;
+  cursor: text;
 }
 
 textarea:focus {

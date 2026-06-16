@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useElectron } from '../hooks/useElectron'
+import { useWebSocket } from '../hooks/useWebSocket'
 import { store } from '../lib/store'
 import DissonanceChart from '../components/DissonanceChart'
 import ValenceChart from '../components/ValenceChart'
@@ -9,8 +10,35 @@ export default function Dashboard() {
   const electron = useElectron()
   const [notes, setNotes] = useState('')
   const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saved' | 'empty'
+  const [dissonanceData, setDissonanceData] = useState(() => store.getDissonances())
 
-  const dissonanceData = store.getDissonances()
+  const handleWsMessage = useCallback((data) => {
+    if (data.type === 'dissonance') {
+      const entry = {
+        time: data.timestamp,
+        value: Math.round(data.value),
+        alert_level: data.alert_level,
+        face: data.face,
+        voice: data.voice,
+        quadrant_face: data.quadrant_face,
+      }
+      store.addDissonance(entry)
+      setDissonanceData((prev) => [...prev, entry])
+    }
+  }, [])
+
+  useWebSocket(handleWsMessage)
+
+  // Synchronisation cross-fenêtre via localStorage events
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'dissonanceData') {
+        setDissonanceData(store.getDissonances())
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
 
   const { totalAlerts, positiveCount, negativeCount } = useMemo(() => {
     let alerts = 0
