@@ -6,11 +6,16 @@ import electron from 'vite-plugin-electron'
 export default defineConfig({
   plugins: [
     react(),
-    electron({
-      entry: [
-        'electron/main.js',
-        'electron/preload.js',
-      ],
-    }),
+    electron([
+      {
+        entry: 'electron/main.js',
+      },
+      {
+        entry: 'electron/preload.js',
+        onstart({ reload }) {
+          reload()
+        },
+      },
+    ]),
   ],
 })
