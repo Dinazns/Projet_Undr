@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
+const { pathToFileURL } = require('url')
 
 let hudWindow
 let dashboardWindow
@@ -26,7 +27,8 @@ function createHUD() {
   if (process.env.VITE_DEV_SERVER_URL) {
     hudWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/hud`)
   } else {
-    hudWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: '/hud' })
+    const filePath = path.join(__dirname, '../dist/index.html')
+    hudWindow.loadURL(pathToFileURL(filePath).href + '#/hud')
   }
 }
 
@@ -47,7 +49,8 @@ function createDashboard() {
   if (process.env.VITE_DEV_SERVER_URL) {
     dashboardWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/dashboard`)
   } else {
-    dashboardWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: '/dashboard' })
+    const filePath = path.join(__dirname, '../dist/index.html')
+    dashboardWindow.loadURL(pathToFileURL(filePath).href + '#/dashboard')
   }
 }
 

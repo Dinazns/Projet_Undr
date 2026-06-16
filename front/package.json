@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "electron": "electron .",
-    "electron:dev": "vite"
+    "electron": "electron ."
   },
   "dependencies": {
     "react": "^19.2.7",
