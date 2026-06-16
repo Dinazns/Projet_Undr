@@ -11,6 +11,7 @@ import {
   Filler,
 } from 'chart.js'
 import zoomPlugin from 'chartjs-plugin-zoom'
+import { translateEmotion } from '../lib/i18n'
 
 Chart.register(
   LineController,
@@ -98,8 +99,8 @@ export default function DissonanceChart({ data }) {
                 const raw = context.raw
                 return [
                   `Dissonance : ${context.parsed.y}%`,
-                  `Visage : ${raw.face || 'N/A'}`,
-                  `Voix : ${raw.voice || 'N/A'}`,
+                  `Visage : ${translateEmotion(raw.face) || 'N/A'}`,
+                  `Voix : ${translateEmotion(raw.voice) || 'N/A'}`,
                 ]
               },
             },
