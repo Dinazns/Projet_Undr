@@ -15,13 +15,16 @@ function createHUD() {
     transparent: true,
     alwaysOnTop: true,
     hasShadow: false,
-    resizable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
   })
+
+  // Desactive le move natif - on gère le drag manuellement via la poignée
+  hudWindow.setMovable(false)
+  // Le resize natif reste active pour les bords de la fenetre
 
   // En dev, charge le serveur Vite. En prod, charge le build statique.
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -127,11 +130,20 @@ ipcMain.on('update-window', (event, action, deltaX, deltaY) => {
   win.setBounds({ x, y, width: w, height: h })
 })
 
+ipcMain.on('open-dashboard', () => {
+  if (!dashboardWindow || dashboardWindow.isDestroyed()) {
+    createDashboard()
+  }
+})
+
 ipcMain.on('stop-session', () => {
   if (hudWindow) {
     hudWindow.close()
+    hudWindow = null
   }
-  createDashboard()
+  if (!dashboardWindow || dashboardWindow.isDestroyed()) {
+    createDashboard()
+  }
 })
 
 ipcMain.on('close-app', () => {
