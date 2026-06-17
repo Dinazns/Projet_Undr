@@ -48,9 +48,8 @@ function createHUD() {
     },
   })
 
-  // Desactive le move natif - on gère le drag manuellement via la poignée
+
   hudWindow.setMovable(false)
-  // Le resize natif reste active pour les bords de la fenetre
 
   // Applique les bounds sauvegardees quand la fenetre est prete
   hudWindow.once('ready-to-show', () => {
