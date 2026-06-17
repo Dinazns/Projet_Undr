@@ -6,6 +6,7 @@ import soundfile as sf
 import io
 import base64
 import warnings
+import traceback
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
@@ -51,139 +52,177 @@ def get_hud_image():
 async def connexion_hume(electron_ws: WebSocket):
     uri = f"wss://api.hume.ai/v0/stream/models?apikey={HUME_API_KEY}"
     print("⏳ Connexion au serveur Hume AI...")
-    
+
+    micro_loopback = None
+    recorder = None
+    hume_ws = None
+
     try:
         hp_par_defaut = sc.default_speaker().name
         micro_loopback = sc.get_microphone(id=str(hp_par_defaut), include_loopback=True)
-        print(f"🎙️ Interception audio activée sur : {hp_par_defaut}")
+        print(f"[AUDIO] Interception audio activée sur : {hp_par_defaut}")
     except Exception as e:
-        print(f"❌ Erreur de configuration audio : {e}")
+        print(f"[ERREUR] Erreur de configuration audio : {e}")
+        traceback.print_exc()
         return
-    
-    try:
-        async with websockets.connect(uri) as hume_ws:
-            print("✅ LIGNE DIRECTE OUVERTE AVEC HUME !")
-            
-            with micro_loopback.recorder(samplerate=44100) as recorder:
-                while True:
-                    # Vérifier si Electron est toujours connecté
-                    if electron_ws.client_state.name == "DISCONNECTED":
-                        break
-                        
-                    # --- CAPTURE DES FLUX ---
-                    donnees_audio = recorder.record(numframes=44100)
-                    buffer_audio = io.BytesIO()
-                    sf.write(buffer_audio, donnees_audio, 44100, format='WAV', subtype='PCM_16')
-                    audio_base64 = base64.b64encode(buffer_audio.getvalue()).decode('utf-8')
-                    
-                    image_actuelle_base64 = get_hud_image()
-                    
-                    # --- ENVOI AUX MODÈLES ---
-                    await hume_ws.send(json.dumps({
-                        "models": {"prosody": {}},
-                        "data": audio_base64
-                    }))
-                    
-                    if image_actuelle_base64:
-                        await hume_ws.send(json.dumps({
-                            "models": {"face": {}},
-                            "data": image_actuelle_base64
-                        }))
-                    
-                    emotion_visage_actuelle = None
-                    score_visage = 0
-                    emotion_voix_actuelle = None
-                    score_voix = 0
-                    
-                    # --- RÉCUPÉRATION DES PRÉDICTIONS ---
-                    for _ in range(2): 
-                        reponse = await hume_ws.recv()
-                        donnees = json.loads(reponse)
-                        
-                        if 'face' in donnees and 'predictions' in donnees['face']:
-                            try:
-                                emotions = donnees['face']['predictions'][0]['emotions']
-                                dominante = max(emotions, key=lambda x: x['score'])
-                                emotion_visage_actuelle = dominante['name']
-                                score_visage = dominante['score'] * 100
-                                print(f"👁️ VISAGE : {emotion_visage_actuelle} ({score_visage:.0f}%)")
-                            except: pass 
-                                
-                        if 'prosody' in donnees and 'predictions' in donnees['prosody']:
-                            try:
-                                emotions = donnees['prosody']['predictions'][0]['emotions']
-                                dominante = max(emotions, key=lambda x: x['score'])
-                                emotion_voix_actuelle = dominante['name']
-                                score_voix = dominante['score'] * 100
-                                print(f"🗣️ VOIX   : {emotion_voix_actuelle} ({score_voix:.0f}%)")
-                            except: pass 
 
-                    # ==========================================================
-                    # MOTEUR DE DISSONANCE (FUSION MULTIMODALE)
-                    # ==========================================================
-                    
-                    if emotion_visage_actuelle and emotion_voix_actuelle:
-                        SEUIL_MIN_VISAGE = 30
-                        SEUIL_MIN_VOIX = 15
-                        
-                        if score_visage > SEUIL_MIN_VISAGE and score_voix > SEUIL_MIN_VOIX:
-                            def trouver_quadrant(emotion):
-                                for nom_quadrant, liste_emotions in TOUS_LES_GROUPES.items():
-                                    if emotion in liste_emotions:
-                                        return nom_quadrant
-                                return "Inconnu"
-                                
-                            quadrant_visage = trouver_quadrant(emotion_visage_actuelle)
-                            quadrant_voix = trouver_quadrant(emotion_voix_actuelle)
-                            
-                            if quadrant_visage != "Inconnu" and quadrant_voix != "Inconnu":
-                                dissonance_value = 0
-                                alert_level = "NONE"
-                                
-                                if quadrant_visage != quadrant_voix:
-                                    indice_certitude = (score_visage + score_voix) / 2
-                                    dissonance_value = indice_certitude
-                                    
-                                    print("\n" + "⚡" + "="*45)
-                                    if indice_certitude > 60:
-                                        alert_level = "SEVERE"
-                                        print(f"🚨 ALERTE : DISSONANCE SÉVÈRE (Certitude: {indice_certitude:.1f}%)")
-                                    elif indice_certitude > 40:
-                                        alert_level = "MODERATE"
-                                        print(f"⚠️ ALERTE : DISSONANCE MODÉRÉE (Certitude: {indice_certitude:.1f}%)")
-                                    else:
-                                        alert_level = "VIGILANCE"
-                                        print(f"👀 INFO : VIGILANCE REQUISE (Certitude: {indice_certitude:.1f}%)")
-                                        
-                                    print(f"🎭 Visage : {emotion_visage_actuelle} -> {quadrant_visage}")
-                                    print(f"🗣️ Voix   : {emotion_voix_actuelle} -> {quadrant_voix}")
-                                    print("="*45 + "⚡" + "\n")
-                                
-                                # Envoi à Electron
-                                await electron_ws.send_json({
-                                    "type": "dissonance",
-                                    "timestamp": datetime.now().strftime("%H:%M:%S"),
-                                    "value": dissonance_value,
-                                    "alert_level": alert_level,
-                                    "face": f"{emotion_visage_actuelle} ({score_visage:.0f}%)",
-                                    "voice": f"{emotion_voix_actuelle} ({score_voix:.0f}%)",
-                                    "quadrant_face": quadrant_visage
-                                })
-                                
+    try:
+        hume_ws = await websockets.connect(uri)
+        print("[OK] LIGNE DIRECTE OUVERTE AVEC HUME !")
+
+        recorder = micro_loopback.recorder(samplerate=44100)
+        recorder.__enter__()
+
+        while True:
+            # Vérifier si Electron est toujours connecté
+            if electron_ws.client_state.name == "DISCONNECTED":
+                break
+
+            # --- CAPTURE DES FLUX ---
+            donnees_audio = recorder.record(numframes=44100)
+            buffer_audio = io.BytesIO()
+            sf.write(buffer_audio, donnees_audio, 44100, format='WAV', subtype='PCM_16')
+            audio_base64 = base64.b64encode(buffer_audio.getvalue()).decode('utf-8')
+
+            image_actuelle_base64 = get_hud_image()
+
+            # --- ENVOI AUX MODÈLES ---
+            await hume_ws.send(json.dumps({
+                "models": {"prosody": {}},
+                "data": audio_base64
+            }))
+
+            if image_actuelle_base64:
+                await hume_ws.send(json.dumps({
+                    "models": {"face": {}},
+                    "data": image_actuelle_base64
+                }))
+
+            emotion_visage_actuelle = None
+            score_visage = 0
+            emotion_voix_actuelle = None
+            score_voix = 0
+
+            # --- RÉCUPÉRATION DES PRÉDICTIONS ---
+            nb_reponses_attendues = 2 if image_actuelle_base64 else 1
+            reponses_recues = 0
+
+            while reponses_recues < nb_reponses_attendues:
+                try:
+                    reponse = await asyncio.wait_for(hume_ws.recv(), timeout=5.0)
+                    reponses_recues += 1
+                    donnees = json.loads(reponse)
+
+                    if 'face' in donnees and 'predictions' in donnees['face']:
+                        try:
+                            emotions = donnees['face']['predictions'][0]['emotions']
+                            dominante = max(emotions, key=lambda x: x['score'])
+                            emotion_visage_actuelle = dominante['name']
+                            score_visage = dominante['score'] * 100
+                            print(f"[VISAGE] VISAGE : {emotion_visage_actuelle} ({score_visage:.0f}%)")
+                        except (KeyError, IndexError, TypeError) as e:
+                            print(f"[WARN] Format réponse face inattendu : {e}")
+
+                    if 'prosody' in donnees and 'predictions' in donnees['prosody']:
+                        try:
+                            emotions = donnees['prosody']['predictions'][0]['emotions']
+                            dominante = max(emotions, key=lambda x: x['score'])
+                            emotion_voix_actuelle = dominante['name']
+                            score_voix = dominante['score'] * 100
+                            print(f"[VOIX] VOIX   : {emotion_voix_actuelle} ({score_voix:.0f}%)")
+                        except (KeyError, IndexError, TypeError) as e:
+                            print(f"[WARN] Format réponse prosody inattendu : {e}")
+
+                except asyncio.TimeoutError:
+                    print("[TIMEOUT] Timeout en attendant une réponse de Hume")
+                    break
+
+            # --- RATE LIMITING ---
+            await asyncio.sleep(0.5)
+
+            # ==========================================================
+            # MOTEUR DE DISSONANCE (FUSION MULTIMODALE)
+            # ==========================================================
+
+            if emotion_visage_actuelle and emotion_voix_actuelle:
+                SEUIL_MIN_VISAGE = 30
+                SEUIL_MIN_VOIX = 15
+
+                if score_visage > SEUIL_MIN_VISAGE and score_voix > SEUIL_MIN_VOIX:
+                    def trouver_quadrant(emotion):
+                        for nom_quadrant, liste_emotions in TOUS_LES_GROUPES.items():
+                            if emotion in liste_emotions:
+                                return nom_quadrant
+                        return "Inconnu"
+
+                    quadrant_visage = trouver_quadrant(emotion_visage_actuelle)
+                    quadrant_voix = trouver_quadrant(emotion_voix_actuelle)
+
+                    if quadrant_visage != "Inconnu" and quadrant_voix != "Inconnu":
+                        dissonance_value = 0
+                        alert_level = "NONE"
+
+                        if quadrant_visage != quadrant_voix:
+                            indice_certitude = (score_visage + score_voix) / 2
+                            dissonance_value = indice_certitude
+
+                            print("\n" + "***" + "="*45)
+                            if indice_certitude > 60:
+                                alert_level = "SEVERE"
+                                print(f"[ALERTE] ALERTE : DISSONANCE SÉVÈRE (Certitude: {indice_certitude:.1f}%)")
+                            elif indice_certitude > 40:
+                                alert_level = "MODERATE"
+                                print(f"[WARN] ALERTE : DISSONANCE MODÉRÉE (Certitude: {indice_certitude:.1f}%)")
+                            else:
+                                alert_level = "VIGILANCE"
+                                print(f"[INFO] INFO : VIGILANCE REQUISE (Certitude: {indice_certitude:.1f}%)")
+
+                            print(f"[VISAGE] Visage : {emotion_visage_actuelle} -> {quadrant_visage}")
+                            print(f"[VOIX] Voix   : {emotion_voix_actuelle} -> {quadrant_voix}")
+                            print("="*45 + "***" + "\n")
+
+                        # Envoi à Electron
+                        await electron_ws.send_json({
+                            "type": "dissonance",
+                            "timestamp": datetime.now().strftime("%H:%M:%S"),
+                            "value": dissonance_value,
+                            "alert_level": alert_level,
+                            "face": f"{emotion_visage_actuelle} ({score_visage:.0f}%)",
+                            "voice": f"{emotion_voix_actuelle} ({score_voix:.0f}%)",
+                            "quadrant_face": quadrant_visage
+                        })
+
+    except asyncio.CancelledError:
+        print("[STOP] Tâche Hume annulée proprement.")
+        raise
     except Exception as e:
-        print(f"⚠️ Erreur Hume : {e}")
+        print(f"[WARN] Erreur Hume : {e}")
+        traceback.print_exc()
+    finally:
+        if recorder is not None:
+            try:
+                recorder.__exit__(None, None, None)
+                print("[AUDIO] Recorder audio fermé.")
+            except Exception as e:
+                print(f"[WARN] Erreur fermeture recorder : {e}")
+        if hume_ws is not None:
+            try:
+                await hume_ws.close()
+                print("[WS] Connexion Hume fermée.")
+            except Exception as e:
+                print(f"[WARN] Erreur fermeture Hume WS : {e}")
 
 def vibrer_bracelet(intensite, type_vibration):
     """
     Fonction factice pour simuler l'envoi d'une commande de vibration au bracelet.
     """
-    print(f"📳 TEST BRACELET - Type: {type_vibration} | Intensité: {intensite}/100")
+    print(f"[VIBRATION] TEST BRACELET - Type: {type_vibration} | Intensité: {intensite}/100")
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("🔌 Client Electron (HUD) connecté au WebSocket.")
+    print("[WS] Client Electron (HUD) connecté au WebSocket.")
     
     # Démarrer la boucle Hume en tâche de fond pour cette session
     task = asyncio.create_task(connexion_hume(websocket))
@@ -202,9 +241,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     "h": data["h"]
                 }
     except WebSocketDisconnect:
-        print("🔌 Client Electron déconnecté.")
+        print("[WS] Client Electron déconnecté.")
         task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 if __name__ == "__main__":
-    print("🚀 Serveur FastAPI démarré sur http://127.0.0.1:8000")
+    print("[SERVEUR] Serveur FastAPI démarré sur http://127.0.0.1:8000")
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="error")
