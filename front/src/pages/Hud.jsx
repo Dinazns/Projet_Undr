@@ -11,6 +11,7 @@ export default function Hud() {
   const [phase, setPhase] = useState('waiting') // 'waiting' | 'active'
   const [showSettings, setShowSettings] = useState(false)
   const [hasSensorData, setHasSensorData] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
 
   const handleWsMessage = useCallback((data) => {
     if (data.type === 'dissonance') {
@@ -41,7 +42,23 @@ export default function Hud() {
     return () => clearInterval(interval)
   }, [phase, electron, wsSend])
 
+  // Fermer la modal avec Escape
+  useEffect(() => {
+    if (!showSettings) return
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setShowSettings(false)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [showSettings])
+
   const handleStart = () => {
+    if (isStarting) return
+    if (wsStatus !== 'connected') {
+      alert("Le moteur d'analyse n'est pas connecté. Veuillez démarrer le backend.")
+      return
+    }
+    setIsStarting(true)
     setPhase('active')
     store.clearDissonances()
     if (electron) {
@@ -79,8 +96,12 @@ export default function Hud() {
           <div className="glass-panel main-panel">
             <h1>Consentement requis</h1>
             <p>L'assistant analysera les émotions dans ce cadre.</p>
-            <button className="btn-primary" onClick={handleStart}>
-              Démarrer l'assistance
+            <button
+              className="btn-primary"
+              onClick={handleStart}
+              disabled={isStarting}
+            >
+              {isStarting ? 'Démarrage...' : 'Démarrer l\'assistance'}
             </button>
           </div>
         </div>

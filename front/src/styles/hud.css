@@ -98,6 +98,13 @@
   transform: translateY(1px);
 }
 
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 /* Écran actif */
 .active-screen {
   position: absolute;

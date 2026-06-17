@@ -197,7 +197,7 @@ textarea:focus {
 /* Boutons */
 .btn-primary {
   background: #deff9a;
-  color: #fff;
+  color: rgba(6, 39, 20, 0.897);;
   border: none;
   padding: 12px 24px;
   border-radius: 30px;

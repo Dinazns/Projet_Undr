@@ -95,8 +95,6 @@ function createDashboard() {
     dashboardWindow.loadURL(pathToFileURL(filePath).href + '#/dashboard')
   }
 
-  // Minimise le dashboard automatiquement a l'ouverture
-  dashboardWindow.minimize()
 }
 
 app.whenReady().then(() => {
@@ -182,7 +180,8 @@ ipcMain.on('open-dashboard', () => {
   if (!dashboardWindow || dashboardWindow.isDestroyed()) {
     createDashboard()
   } else {
-    dashboardWindow.minimize()
+    if (dashboardWindow.isMinimized()) dashboardWindow.restore()
+    dashboardWindow.focus()
   }
 })
 
