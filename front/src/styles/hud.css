@@ -28,7 +28,7 @@
 
 .hud-active .capture-frame {
   border: 2px solid #deff9a;
-  opacity: 0.15;
+  background: transparent;
 }
 
 /* Écran d'attente */

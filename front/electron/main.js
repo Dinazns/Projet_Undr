@@ -55,6 +55,9 @@ function createDashboard() {
     const filePath = path.join(__dirname, '../dist/index.html')
     dashboardWindow.loadURL(pathToFileURL(filePath).href + '#/dashboard')
   }
+
+  // Minimise le dashboard automatiquement a l'ouverture
+  dashboardWindow.minimize()
 }
 
 app.whenReady().then(() => {
@@ -133,6 +136,8 @@ ipcMain.on('update-window', (event, action, deltaX, deltaY) => {
 ipcMain.on('open-dashboard', () => {
   if (!dashboardWindow || dashboardWindow.isDestroyed()) {
     createDashboard()
+  } else {
+    dashboardWindow.minimize()
   }
 })
 
