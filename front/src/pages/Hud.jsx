@@ -57,11 +57,10 @@ export default function Hud() {
     setShowSettings(false)
   }
 
-  const handleTestVibration = (type, intensity) => {
+  const handleTestVibration = (type) => {
     wsSend({
       type: 'test_vibration',
       test_type: type,
-      intensity: intensity,
     })
   }
 
