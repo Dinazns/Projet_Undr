@@ -41,15 +41,6 @@ export default function Hud() {
     return () => clearInterval(interval)
   }, [phase, electron, wsSend])
 
-  // Restaurer la position du HUD au chargement
-  useEffect(() => {
-    if (!electron) return
-    const saved = store.getHudBounds()
-    if (saved) {
-      electron.setBounds(saved)
-    }
-  }, [electron])
-
   const handleStart = () => {
     setPhase('active')
     store.clearDissonances()

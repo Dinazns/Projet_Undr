@@ -1,11 +1,37 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const { pathToFileURL } = require('url')
+const fs = require('fs')
 
 let hudWindow
 let dashboardWindow
 
+const BOUNDS_FILE = path.join(app.getPath('userData'), 'hud-bounds.json')
+
+function loadHudBounds() {
+  try {
+    const data = fs.readFileSync(BOUNDS_FILE, 'utf-8')
+    return JSON.parse(data)
+  } catch {
+    return null
+  }
+}
+
+function saveHudBounds(bounds) {
+  try {
+    const dir = path.dirname(BOUNDS_FILE)
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    fs.writeFileSync(BOUNDS_FILE, JSON.stringify(bounds), 'utf-8')
+  } catch (e) {
+    console.error('Erreur sauvegarde bounds:', e)
+  }
+}
+
 function createHUD() {
+  const saved = loadHudBounds()
+
   hudWindow = new BrowserWindow({
     width: 800,
     height: 600,
@@ -25,6 +51,20 @@ function createHUD() {
   // Desactive le move natif - on gère le drag manuellement via la poignée
   hudWindow.setMovable(false)
   // Le resize natif reste active pour les bords de la fenetre
+
+  // Applique les bounds sauvegardees quand la fenetre est prete
+  hudWindow.once('ready-to-show', () => {
+    if (saved && saved.x !== undefined && saved.y !== undefined) {
+      hudWindow.setBounds(saved)
+    }
+  })
+
+  // Sauvegarde la position et taille a la fermeture
+  hudWindow.on('close', () => {
+    if (hudWindow && !hudWindow.isDestroyed()) {
+      saveHudBounds(hudWindow.getBounds())
+    }
+  })
 
   // En dev, charge le serveur Vite. En prod, charge le build statique.
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -68,6 +108,12 @@ app.whenReady().then(() => {
       createHUD()
     }
   })
+})
+
+app.on('before-quit', () => {
+  if (hudWindow && !hudWindow.isDestroyed()) {
+    saveHudBounds(hudWindow.getBounds())
+  }
 })
 
 app.on('window-all-closed', () => {
