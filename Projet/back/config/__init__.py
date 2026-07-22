@@ -1,0 +1,30 @@
+"""Module de configuration."""
+from .settings import (
+    API_HOST,
+    API_PORT,
+    DEBUG,
+    MAC_MONTRE,
+    EMOTION_GROUPS,
+    SEUIL_MIN_VISAGE,
+    SEUIL_MIN_VOIX,
+    SAMPLERATE,
+    AUDIO_DEVICE,
+    PERSISTENCE_WINDOW,
+    PERSISTENCE_MIN,
+    VIBRATION_COOLDOWN_SECONDS,
+)
+
+__all__ = [
+    "API_HOST",
+    "API_PORT",
+    "DEBUG",
+    "MAC_MONTRE",
+    "EMOTION_GROUPS",
+    "SEUIL_MIN_VISAGE",
+    "SEUIL_MIN_VOIX",
+    "SAMPLERATE",
+    "AUDIO_DEVICE",
+    "PERSISTENCE_WINDOW",
+    "PERSISTENCE_MIN",
+    "VIBRATION_COOLDOWN_SECONDS",
+]

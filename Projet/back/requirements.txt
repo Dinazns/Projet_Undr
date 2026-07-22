@@ -1,0 +1,17 @@
+mss
+numpy
+Pillow
+python-dotenv
+soundcard
+soundfile
+websockets
+fastapi
+uvicorn
+fer
+opencv-python
+bleak
+mediapipe
+librosa
+torch
+torchaudio
+transformers
