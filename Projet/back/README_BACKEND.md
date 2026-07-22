@@ -1,97 +1,94 @@
-# Backend - Système de Détection de Dissonance Émotionnelle
+# Backend — Détection de dissonance émotionnelle
 
-Version 2.0 - Professionnel et maintenable
+Backend Python (FastAPI) qui analyse en temps réel les expressions faciales et
+la voix pour détecter une dissonance émotionnelle, et déclenche une vibration
+sur une montre connectée. Tout tourne en local, sur CPU.
 
-## Fonctionnalités
-- Détection multimodale d'émotions (visage + voix)
-- Détection de dissonance émotionnelle (modèle Russell)
-- Intégration avec la montre Blackview R50 via BLE (vibration sur alerte)
-- API FastAPI avec WebSocket pour la communication avec le frontend
-- Optimisé pour fonctionner exclusivement sur CPU
+## Principe
 
-## Structure du Projet
+Le système capture deux canaux et les projette dans le plan de Russell
+(valence / arousal) :
+
+- **Visage** : MediaPipe localise le visage dans la zone du HUD, FER classe
+  l'émotion. La distribution complète est projetée en un point continu
+  (barycentre), pas seulement le label dominant.
+- **Voix** : le flux audio est intercepté en loopback (16 kHz) et analysé par le
+  modèle audeering `wav2vec2-large-robust-12-ft-emotion-msp-dim`, qui renvoie
+  directement un point (valence, arousal).
+
+La dissonance est mesurée par la distance euclidienne entre les deux points.
+Une logique floue gradue l'alerte en trois niveaux (VIGILANCE / MODERATE /
+SEVERE). La vibration n'est envoyée que sur MODERATE/SEVERE, si la dissonance
+persiste sur plusieurs fenêtres, et hors période de cooldown — pour éviter les
+fausses alertes et la fatigue d'alarme.
+
+## Structure
+
 ```
 back/
 ├── api/
-│   ├── __init__.py
-│   └── main.py              # Point d'entrée FastAPI, WebSocket endpoint
+│   └── main.py              # FastAPI, endpoint WebSocket, boucle d'analyse
 ├── config/
-│   ├── __init__.py
-│   └── settings.py          # Configuration centrale (variables d'environnement, constantes)
+│   └── settings.py          # Constantes du pipeline, coordonnées de Russell
 ├── services/
-│   ├── __init__.py
-│   ├── ble_service.py       # Service de communication BLE avec la montre
-│   └── emotion_service.py   # Service de détection d'émotions multimodale
+│   ├── ble_service.py       # Communication BLE avec la montre (protocole Moyoung)
+│   └── emotion_service.py   # Détection faciale + vocale, calcul de dissonance
 ├── utils/
-│   ├── __init__.py
-│   └── screen_capture.py    # Utilitaire de capture d'écran pour le HUD
-├── requirements.txt         # Dépendances
-├── README_BACKEND.md        # Ce fichier
-└── engine_old.py            # Ancien fichier (pour référence)
+│   └── screen_capture.py    # Capture de la zone du HUD
+├── models/
+│   └── face_detector.task   # Modèle MediaPipe
+├── download_model.py        # Téléchargement du modèle MediaPipe
+└── requirements.txt
 ```
 
 ## Installation
 
-1. Créez un environnement virtuel (recommandé) :
-   ```bash
-   py -3.10.9 -m venv venv
-   # Sur Windows
-   venv\Scripts\activate
-   ```
+```bash
+python -m venv venv
+venv\Scripts\activate        # Windows
+pip install -r requirements.txt
+```
 
-2. Installez les dépendances :
-   ```bash
-   pip install -r requirements.txt
-   ```
+Un fichier `.env` optionnel permet de personnaliser la configuration :
 
-3. (Optionnel) Créez un fichier `.env` pour personnaliser la configuration :
-   ```env
-   API_HOST=127.0.0.1
-   API_PORT=8000
-   DEBUG=True
-   MAC_MONTRE=7B:0B:A5:16:62:0C
-   ```
+```env
+API_HOST=127.0.0.1
+API_PORT=8000
+MAC_MONTRE=7B:0B:A5:16:62:0C
+AUDIO_DEVICE=            # périphérique loopback (vide = HP par défaut)
+```
 
-## Utilisation
+## Lancement
 
-### Démarrage du serveur
 ```bash
 python -m api.main
 ```
 
-OU si vous préférez utiliser uvicorn directement :
-```bash
-uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
-```
+Le premier démarrage télécharge le modèle vocal (~1 Go) depuis Hugging Face.
 
-### Endpoints
-- `GET /health` - Vérification de l'état de l'API
-- `WebSocket /ws` - Communication avec le frontend (HUD)
+## Endpoints
 
-## Services
-### `BLEService` (Singleton)
-Gère la connexion, l'envoi de notifications et les vibrations avec la montre Blackview R50.
-- `connect()`: Se connecte à la montre et synchronise l'heure
-- `vibrate()`: Fait vibrer la montre en simulant un appel entrant
-- `disconnect()`: Déconnecte proprement la montre
+| Méthode | Route | Rôle |
+|---|---|---|
+| WS | `/ws` | Flux temps réel avec le frontend (coordonnées HUD, événements de dissonance) |
+| GET | `/health` | État de l'API et de la connexion BLE |
+| POST | `/ble/connect` · `/ble/disconnect` | Connexion / déconnexion de la montre |
+| GET | `/ble/status` | État de la connexion BLE |
+| GET | `/audio/devices` | Liste des périphériques loopback |
+| GET | `/audio/test` | Mesure du niveau sonore capté sur un périphérique |
+| POST | `/audio/device` | Choix du périphérique loopback (persisté dans `.env`) |
 
-### `EmotionService` (Singleton)
-Gère la détection d'émotions et la détection de dissonance.
-- `detect_face_emotion(image_base64)`: Détecte l'émotion faciale
-- `detect_audio_emotion(audio_data, sample_rate)`: Détecte l'émotion vocale
-- `detect_dissonance(...)`: Détecte la dissonance entre visage et voix
-- `get_emotion_quadrant(emotion)`: Récupère le quadrant Russell d'une émotion
+## Plan de Russell
 
-## Technologies Utilisées
-- **FastAPI**: Framework API web moderne et rapide
-- **FER**: Détection d'émotions faciales (léger pour CPU)
-- **Bleak**: Communication BLE
-- **MSS**: Capture d'écran rapide
-- **NumPy/Pillow/OpenCV**: Traitement d'images/audio
-- **Logging**: Système de logging professionnel
+Chaque émotion a des coordonnées (valence, arousal) réparties en quadrants :
 
-## Modèle Russell (Quadrants Émotionnels)
-1. **Q1 (Actif/Positif)**: happy, joy, surprise, excited, enthusiastic
-2. **Q2 (Calme/Positif)**: calm, neutral, content, satisfied, relaxed
-3. **Q3 (Passif/Négatif)**: sad, bored, tired, disappointed, confused
-4. **Q4 (Actif/Négatif)**: angry, fear, disgust, anxious, frustrated
+- **Q1 — Actif/Positif** : happy, joy, surprise, excited, enthusiastic
+- **Q2 — Calme/Positif** : calm, content, satisfied, relaxed
+- **Q3 — Passif/Négatif** : sad, bored, tired, disappointed, confused
+- **Q4 — Actif/Négatif** : angry, fear, disgust, anxious, frustrated
+- **Q5 — Neutre** : neutral (origine du plan)
+
+## Technologies
+
+FastAPI · MediaPipe · FER · PyTorch / Transformers (wav2vec2) · librosa ·
+soundcard · mss · bleak · OpenCV · NumPy · Pillow
