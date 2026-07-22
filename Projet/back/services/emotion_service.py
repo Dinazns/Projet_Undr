@@ -57,6 +57,7 @@ from config.settings import (
     FACE_VETO_MAX_CONFIDENCE,
     FACE_ENGINE,
     EMOTIEFFLIB_MODEL,
+    EMOTIEFFLIB_VA_GAIN,
 )
 
 # Correspondance des 8 classes EmotiEffLib (AffectNet) vers les labels internes,
@@ -454,9 +455,10 @@ class EmotionService:
             labels, scores = self._emotiefflib.predict_emotions(face_rgb, logits=False)
             scores = np.asarray(scores)[0]
 
-            # Les 2 dernières valeurs sont (valence, arousal), déjà dans [-1, 1].
-            valence = float(np.clip(scores[-2], -1.0, 1.0))
-            arousal = float(np.clip(scores[-1], -1.0, 1.0))
+            # Les 2 dernières valeurs sont (valence, arousal). Un gain les ramène
+            # sur la plage des seuils de dissonance (voir EMOTIEFFLIB_VA_GAIN).
+            valence = float(np.clip(scores[-2] * EMOTIEFFLIB_VA_GAIN, -1.0, 1.0))
+            arousal = float(np.clip(scores[-1] * EMOTIEFFLIB_VA_GAIN, -1.0, 1.0))
 
             # Confiance = probabilité du label dominant (0-100).
             emotion_probs = scores[:-2]

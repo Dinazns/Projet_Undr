@@ -83,6 +83,11 @@ FACE_MIN_MARGIN = 8.0
 # l'approximation du barycentre. Bascule via la variable d'environnement.
 FACE_ENGINE = os.getenv("FACE_ENGINE", "fer").lower()
 EMOTIEFFLIB_MODEL = os.getenv("EMOTIEFFLIB_MODEL", "enet_b0_8_va_mtl")
+# La valence/arousal d'EmotiEffLib (AffectNet) est calibrée mais resserrée
+# (rarement au-delà de ±0.5), là où le barycentre FER atteignait les bords.
+# Ce gain la ramène sur une plage comparable pour que les seuils de dissonance
+# restent valides. À baisser si trop d'alertes, à monter si trop peu.
+EMOTIEFFLIB_VA_GAIN = float(os.getenv("EMOTIEFFLIB_VA_GAIN", "1.8"))
 
 # Le modèle vocal est une régression (valence/arousal), sans probabilité native.
 # On approxime la confiance par la distance au centre (0,0), normalisée par cette
