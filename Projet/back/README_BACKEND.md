@@ -56,7 +56,17 @@ API_HOST=127.0.0.1
 API_PORT=8000
 MAC_MONTRE=7B:0B:A5:16:62:0C
 AUDIO_DEVICE=            # périphérique loopback (vide = HP par défaut)
+FACE_ENGINE=fer         # "fer" ou "emotiefflib"
 ```
+
+### Moteur de classification faciale
+
+Deux moteurs sont disponibles via `FACE_ENGINE` :
+
+- `fer` : CNN entraîné sur FER-2013. Léger, mais confond parfois happy et sad.
+- `emotiefflib` : EfficientNet entraîné sur AffectNet (backend ONNX). Plus
+  robuste sur happy/sad et renvoie directement valence/arousal, exactement
+  comme le canal vocal.
 
 ## Lancement
 

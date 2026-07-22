@@ -8,6 +8,7 @@ websockets
 fastapi
 uvicorn
 fer
+emotiefflib
 opencv-python
 bleak
 mediapipe

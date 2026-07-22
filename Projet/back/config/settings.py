@@ -77,6 +77,13 @@ FACE_TARGET_SIZE = 96                 # taille du crop avant FER
 FACE_MIN_CONFIDENCE = 35.0
 FACE_MIN_MARGIN = 8.0
 
+# Moteur de classification faciale : "fer" (CNN FER-2013) ou "emotiefflib"
+# (EfficientNet AffectNet, modèle multi-tâches qui sort valence/arousal en
+# continu, comme la voix). EmotiEffLib est plus précis sur happy/sad et évite
+# l'approximation du barycentre. Bascule via la variable d'environnement.
+FACE_ENGINE = os.getenv("FACE_ENGINE", "fer").lower()
+EMOTIEFFLIB_MODEL = os.getenv("EMOTIEFFLIB_MODEL", "enet_b0_8_va_mtl")
+
 # Le modèle vocal est une régression (valence/arousal), sans probabilité native.
 # On approxime la confiance par la distance au centre (0,0), normalisée par cette
 # magnitude "très confiant". À recalibrer selon les logs.

@@ -55,7 +55,23 @@ from config.settings import (
     VOICE_NEG_THRESHOLD,
     VOICE_POS_THRESHOLD,
     FACE_VETO_MAX_CONFIDENCE,
+    FACE_ENGINE,
+    EMOTIEFFLIB_MODEL,
 )
+
+# Correspondance des 8 classes EmotiEffLib (AffectNet) vers les labels internes,
+# pour l'affichage et les quadrants. Le calcul de dissonance utilise, lui, la
+# valence/arousal continue renvoyée nativement par le modèle.
+EMOTIEFFLIB_LABEL_MAP = {
+    "Anger": "angry",
+    "Contempt": "disgust",
+    "Disgust": "disgust",
+    "Fear": "fear",
+    "Happiness": "happy",
+    "Neutral": "neutral",
+    "Sadness": "sad",
+    "Surprise": "surprise",
+}
 
 # Configuration du logging
 logger = logging.getLogger(__name__)
@@ -75,10 +91,12 @@ class EmotionService:
         return cls._instance
 
     def _initialize_models(self):
-        """Initialise les modèles de détection d'émotions (MediaPipe + FER)."""
-        logger.info("Initialisation des modèles de détection d'émotions (MediaPipe + FER)...")
+        """Initialise les modèles de détection d'émotions (MediaPipe + FER/EmotiEffLib)."""
+        logger.info("Initialisation des modèles de détection d'émotions (moteur facial : %s)...", FACE_ENGINE)
         self._face_history = deque(maxlen=FACE_SMOOTH_WINDOW)
+        self._face_va_history = deque(maxlen=FACE_SMOOTH_WINDOW)
         self._voice_history = deque(maxlen=3)
+        self._emotiefflib = None
 
         # Initialisation immédiate de MediaPipe Face Detection
         model_path = os.path.join(
@@ -109,16 +127,24 @@ class EmotionService:
             options
         )
 
-        # Initialisation de FER
-        self._fer_model = FER(mtcnn=False)
+        # Classifieur facial : FER ou EmotiEffLib selon la configuration.
+        if FACE_ENGINE == "emotiefflib":
+            from emotiefflib.facial_analysis import EmotiEffLibRecognizer
+            # Backend ONNX : self-contained, pas de dépendance à la version de timm.
+            self._emotiefflib = EmotiEffLibRecognizer(
+                engine="onnx", model_name=EMOTIEFFLIB_MODEL, device="cpu"
+            )
+            logger.info("Modèle EmotiEffLib chargé : %s (ONNX).", EMOTIEFFLIB_MODEL)
+        else:
+            self._fer_model = FER(mtcnn=False)
 
-        # MediaPipe fait déjà la détection : on court-circuite celle de FER en
-        # lui renvoyant toujours l'image entière.
-        def bypass_face_detection(image, **kwargs):
-            h_img, w_img = image.shape[:2]
-            return [(0, 0, w_img, h_img)]
-        
-        self._fer_model.find_faces = bypass_face_detection
+            # MediaPipe fait déjà la détection : on court-circuite celle de FER en
+            # lui renvoyant toujours l'image entière.
+            def bypass_face_detection(image, **kwargs):
+                h_img, w_img = image.shape[:2]
+                return [(0, 0, w_img, h_img)]
+
+            self._fer_model.find_faces = bypass_face_detection
 
         # Chargement du modèle vocal (lazy, pour ne pas imposer torch à l'import).
         # Ce checkpoint n'est pas chargeable via une classe AutoModel générique :
@@ -345,7 +371,11 @@ class EmotionService:
             if width < FACE_MIN_SIZE_PX or height < FACE_MIN_SIZE_PX:
                 logger.debug("Visage trop petit pour une classification fiable")
                 return None, 0.0, None
-            
+
+            # EmotiEffLib : classification + valence/arousal native sur le crop.
+            if self._emotiefflib is not None:
+                return self._classify_emotiefflib(face_crop)
+
             # FER directement sur le crop (la détection de visage est déjà faite).
             try:
                 # Égalisation de contraste (CLAHE) avant classification.
@@ -407,6 +437,49 @@ class EmotionService:
 
         except Exception as e:
             logger.error(f"Erreur lors de la détection faciale: {e}", exc_info=True)
+            return None, 0.0, None
+
+    def _classify_emotiefflib(
+        self, face_crop_bgr: np.ndarray
+    ) -> Tuple[Optional[str], float, Optional[Tuple[float, float]]]:
+        """
+        Classe le visage avec EmotiEffLib (modèle multi-tâches AffectNet).
+
+        Le modèle renvoie 8 probabilités d'émotion + valence + arousal. On garde
+        le label dominant (affichage/quadrant) et surtout la valence/arousal
+        CONTINUE, alignée sur le plan de Russell comme la sortie du modèle vocal.
+        """
+        try:
+            face_rgb = cv2.cvtColor(face_crop_bgr, cv2.COLOR_BGR2RGB)
+            labels, scores = self._emotiefflib.predict_emotions(face_rgb, logits=False)
+            scores = np.asarray(scores)[0]
+
+            # Les 2 dernières valeurs sont (valence, arousal), déjà dans [-1, 1].
+            valence = float(np.clip(scores[-2], -1.0, 1.0))
+            arousal = float(np.clip(scores[-1], -1.0, 1.0))
+
+            # Confiance = probabilité du label dominant (0-100).
+            emotion_probs = scores[:-2]
+            score = float(np.max(emotion_probs) * 100.0)
+            raw_label = labels[0] if labels else None
+            emotion = EMOTIEFFLIB_LABEL_MAP.get(raw_label)
+
+            # Lissage temporel de la valence/arousal, comme pour le visage FER.
+            self._face_va_history.append((valence, arousal))
+            valence = float(np.mean([v for v, _ in self._face_va_history]))
+            arousal = float(np.mean([a for _, a in self._face_va_history]))
+
+            if not emotion or score < FACE_MIN_CONFIDENCE:
+                return None, 0.0, None
+
+            logger.info(
+                "Emotion faciale (EmotiEffLib): %s (%.1f) | valence=%.2f arousal=%.2f",
+                emotion, score, valence, arousal,
+            )
+            return emotion, score, (valence, arousal)
+
+        except Exception as e:
+            logger.error("Erreur EmotiEffLib: %s", e, exc_info=True)
             return None, 0.0, None
 
     def detect_audio_emotion(
