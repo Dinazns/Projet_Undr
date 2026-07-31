@@ -100,8 +100,14 @@ VOICE_SMOOTH_WINDOW = int(os.getenv("VOICE_SMOOTH_WINDOW", "1"))
 # exploitable. Corrige le cas : une séquence se termine (silence), une autre
 # commence, et le nouveau visage est comparé à la voix de la séquence
 # précédente encore présente dans l'historique.
-SILENCE_WINDOWS_BEFORE_RESET = int(os.getenv("SILENCE_WINDOWS_BEFORE_RESET", "1"))
-NO_FACE_WINDOWS_BEFORE_RESET = int(os.getenv("NO_FACE_WINDOWS_BEFORE_RESET", "1"))
+# Une seule fenêtre sans signal ne suffit pas : dans un entretien, le patient
+# se tait toutes les quelques secondes et sort régulièrement du cadre. Traiter
+# chaque pause comme un changement de scène rendait la vibration presque
+# inatteignable, puisqu'elle exige une dissonance confirmée sur plusieurs
+# fenêtres consécutives. Trois fenêtres ≈ neuf secondes sans rien : là, il
+# s'agit bien d'une rupture.
+SILENCE_WINDOWS_BEFORE_RESET = int(os.getenv("SILENCE_WINDOWS_BEFORE_RESET", "3"))
+NO_FACE_WINDOWS_BEFORE_RESET = int(os.getenv("NO_FACE_WINDOWS_BEFORE_RESET", "3"))
 
 # Fenêtres valides ignorées après une purge, le temps que les deux canaux
 # décrivent à nouveau la même scène.
