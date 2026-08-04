@@ -93,7 +93,12 @@ class AnalysisSession:
         self._last_vibration_ts = -1e9
         self._silence_streak = 0
         self._no_face_streak = 0
-        self._valid_windows = 0
+        # Le warm-up sert à ne pas comparer deux canaux qui décrivent encore des
+        # scènes différentes après une purge en cours de séance. Un démarrage
+        # de session (ou une remise à zéro demandée) ne présente pas ce risque :
+        # il n'y a aucune scène précédente. On le considère donc déjà consommé,
+        # sans quoi la toute première fenêtre était systématiquement perdue.
+        self._valid_windows = self._warmup
         if purge_models:
             self._service.reset_state()
         if reason:

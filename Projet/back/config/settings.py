@@ -225,11 +225,22 @@ VOICE_POS_THRESHOLD = float(os.getenv("VOICE_POS_THRESHOLD", "0.15"))
 # visage franc contredit par la voix est un masquage, pas une erreur.
 FACE_VETO_MAX_CONFIDENCE = float(os.getenv("FACE_VETO_MAX_CONFIDENCE", "45.0"))
 
-# La vibration exige une dissonance persistante (PERSISTENCE_MIN fenêtres sur
-# PERSISTENCE_WINDOW) et un délai minimum entre deux vibrations. Le dashboard,
-# lui, reçoit tous les événements.
+# Nombre de fenêtres dissonantes exigées, sur les PERSISTENCE_WINDOW dernières,
+# avant de faire vibrer la montre.
+#
+# PERSISTENCE_MIN = 1 : la vibration part dès la première fenêtre dissonante.
+# La règle avait été introduite quand une seule image pouvait porter la
+# décision : une erreur ponctuelle du classifieur suffisait alors à déclencher
+# l'alerte. Ce n'est plus le cas — chaque fenêtre agrège désormais une dizaine
+# d'images, résumées par une médiane et écartées si elles se dispersent trop :
+# le filtrage des erreurs transitoires a lieu À L'INTÉRIEUR de la fenêtre.
+# Exiger une seconde fenêtre faisait donc doublon, au prix d'un retard de trois
+# secondes qui repoussait l'alerte hors du silence thérapeutique visé.
+# La protection contre la fatigue d'alarme repose sur le délai réfractaire
+# ci-dessous, pas sur la répétition. Monter cette valeur à 2 reste possible si
+# les mesures montrent trop de fausses alertes.
 PERSISTENCE_WINDOW = 3
-PERSISTENCE_MIN = 2
+PERSISTENCE_MIN = int(os.getenv("PERSISTENCE_MIN", "1"))
 VIBRATION_COOLDOWN_SECONDS = 15
 
 # Durée du motif de vibration (délai avant de « raccrocher » l'appel simulé).
