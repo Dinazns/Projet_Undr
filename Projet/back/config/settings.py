@@ -241,7 +241,12 @@ FACE_VETO_MAX_CONFIDENCE = float(os.getenv("FACE_VETO_MAX_CONFIDENCE", "45.0"))
 # les mesures montrent trop de fausses alertes.
 PERSISTENCE_WINDOW = 3
 PERSISTENCE_MIN = int(os.getenv("PERSISTENCE_MIN", "1"))
-VIBRATION_COOLDOWN_SECONDS = 15
+
+# Délai minimum entre deux vibrations. Il reste le seul rempart contre la
+# fatigue d'alarme depuis que l'alerte part dès la première fenêtre : une
+# dissonance qui dure ne fait donc vibrer la montre qu'une fois par intervalle,
+# au lieu d'une fois par fenêtre d'analyse (environ toutes les trois secondes).
+VIBRATION_COOLDOWN_SECONDS = float(os.getenv("VIBRATION_COOLDOWN_SECONDS", "5"))
 
 # Durée du motif de vibration (délai avant de « raccrocher » l'appel simulé).
 # C'est une temporisation du MOTIF, pas une latence de transmission : elle ne
