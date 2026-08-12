@@ -35,7 +35,7 @@ dans le `.env`.
 
 ## La veille
 
-1. `python -m tools.preflight` — tout doit être vert.
+1. `python -m tools.preflight`, tout doit être vert.
 2. **Enregistrer une vidéo de secours** d'une session qui marche : écran + son,
    trois minutes. C'est votre filet si le direct échoue. Ne passez pas sans.
 3. Choisir les extraits à jouer et vérifier qu'ils déclenchent bien une alerte.
