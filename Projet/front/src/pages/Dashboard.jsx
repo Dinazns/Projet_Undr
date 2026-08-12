@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useElectron } from '../hooks/useElectron'
 import { store } from '../lib/store'
+import { useI18n } from '../lib/i18n'
 import DissonanceChart from '../components/DissonanceChart'
 import ValenceChart from '../components/ValenceChart'
 import RussellChart from '../components/RussellChart'
 import '../styles/dashboard.css'
 
 export default function Dashboard() {
+  const { t } = useI18n()
   const electron = useElectron()
   const [notes, setNotes] = useState('')
   const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'saved' | 'error'
@@ -72,6 +74,8 @@ export default function Dashboard() {
         negative_face_count: negativeCount,
       },
       clinical_notes: notes.trim() || null,
+      // Horodatage de l'attestation de consentement saisie par le praticien.
+      consent_recorded_at: store.getConsent(),
       dissonance_entries: dissonanceData,
     }
 
@@ -89,15 +93,21 @@ export default function Dashboard() {
   }
 
   const handleClose = () => {
+    // Purge des données de séance avant fermeture. Sans cela, les événements
+    // horodatés restent en clair dans le localStorage d'Electron (%APPDATA%)
+    // et sont encore présents à l'ouverture de la séance suivante, donc du
+    // patient suivant. Ce sont des données inférées sur un état de santé.
+    store.clearDissonances()
+    store.clearConsent()
     if (electron) electron.closeApp()
   }
 
   const saveButtonText =
     saveStatus === 'saved'
-      ? 'Enregistré'
+      ? t('savedShort')
       : saveStatus === 'error'
-      ? "Erreur d'enregistrement"
-      : 'Enregistrer le compte-rendu PDF'
+      ? t('saveError')
+      : t('savePdf')
 
   const saveButtonStyle =
     saveStatus === 'error'
@@ -111,10 +121,10 @@ export default function Dashboard() {
       <header className="glass-panel header-panel">
         <div className="title-group">
           <div className="led green" />
-          <h1>Bilan de Téléconsultation</h1>
+          <h1>{t('dashboardTitle')}</h1>
         </div>
         <button className="btn-secondary" onClick={handleClose}>
-          Fermer l'application
+          {t('closeApp')}
         </button>
       </header>
 
@@ -122,8 +132,8 @@ export default function Dashboard() {
         {/* Timeline des dissonances */}
         <section className="glass-panel chart-section">
           <div className="section-header">
-            <h2>Timeline des Dissonances Émotionnelles</h2>
-            <span className="badge">{totalAlerts} alerte(s)</span>
+            <h2>{t('timelineTitle')}</h2>
+            <span className="badge">{t('alertCount', { n: totalAlerts })}</span>
           </div>
           <div className="chart-container">
             {dissonanceData.length > 0 ? (
@@ -133,7 +143,7 @@ export default function Dashboard() {
               />
             ) : (
               <p style={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center', paddingTop: 100 }}>
-                Aucune donnée enregistrée pendant cette séance.
+                {t('noData')}
               </p>
             )}
           </div>
@@ -143,7 +153,7 @@ export default function Dashboard() {
         <section className="secondary-charts-grid">
           <div className="glass-panel chart-section">
             <div className="section-header">
-              <h2>Valence Émotionnelle (Voix + Visage)</h2>
+              <h2>{t('valenceTitle')}</h2>
             </div>
             <div className="chart-container doughnut-container">
               <ValenceChart positive={positiveCount} negative={negativeCount} neutral={neutralCount} />
@@ -152,15 +162,14 @@ export default function Dashboard() {
 
           <div className="glass-panel chart-section">
             <div className="section-header">
-              <h2>Mapping de Russell (Visage ↔ Voix)</h2>
+              <h2>{t('russellTitle')}</h2>
             </div>
             <div className="chart-container russell-container">
               {selectedIndex != null && dissonanceData[selectedIndex] ? (
                 <RussellChart entry={dissonanceData[selectedIndex]} />
               ) : (
                 <p style={{ color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
-                  Cliquez sur un pic de la timeline pour afficher les coordonnées
-                  exactes (valence / arousal) du visage et de la voix à cet instant T.
+                  {t('russellHint')}
                 </p>
               )}
             </div>
@@ -169,9 +178,9 @@ export default function Dashboard() {
 
         {/* Notes cliniques */}
         <section className="glass-panel notes-section">
-          <h2>Notes Cliniques</h2>
+          <h2>{t('notesTitle')}</h2>
           <textarea
-            placeholder="Saisissez vos observations post-séance ici..."
+            placeholder={t('notesPlaceholder')}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />

@@ -54,25 +54,83 @@
 }
 
 .main-panel {
-  padding: 32px 40px;
-  text-align: center;
+  /* Le texte était contraint à 250 px, ce qui produisait des lignes de quatre
+     ou cinq mots : illisible pour un paragraphe d'information au patient. La
+     largeur est portée à une mesure de lecture correcte, et le panneau
+     s'adapte au HUD plutôt que d'être coupé quand celui-ci est petit. */
+  width: 440px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 34px 30px;
+  text-align: left;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.main-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.main-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+/* Poignée de déplacement. Elle déborde volontairement du padding latéral pour
+   couvrir toute la largeur du panneau : la zone saisissable est ainsi large,
+   et le repère visuel reste discret. */
+.panel-drag {
+  margin: 0 -34px 2px;
+  padding: 10px 0 8px;
+  display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: center;
+  cursor: grab;
+  flex-shrink: 0;
+  border-radius: 16px 16px 0 0;
+  transition: background 0.2s ease;
+}
+
+.panel-drag:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.panel-drag:active {
+  cursor: grabbing;
+}
+
+.panel-grip {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.panel-drag:hover .panel-grip {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .main-panel h1 {
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 600;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.02em;
+  margin: 0;
 }
 
 .main-panel p {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  max-width: 250px;
-  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.main-panel .btn-primary {
+  margin-top: 6px;
+  align-self: stretch;
 }
 
 .btn-primary {
@@ -103,6 +161,51 @@
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+/* Mesure en direct dans le widget : jauge d'écart visage/voix. */
+.live-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 132px;
+}
+
+.live-gauge {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.live-gauge-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease, background-color 0.4s ease;
+}
+
+.live-label {
+  font-size: 0.62rem;
+  line-height: 1.2;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mention d'attestation de consentement (écran d'accueil du HUD). C'est un
+   engagement du praticien, pas une information : il est détaché du corps du
+   texte pour qu'on ne le lise pas en diagonale. */
+.consent-attest {
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(222, 255, 154, 0.06);
+  border-left: 2px solid rgba(222, 255, 154, 0.55);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 14px;
+  margin: 2px 0 0 0;
+  text-align: left;
 }
 
 /* Écran actif */
@@ -171,38 +274,78 @@
   color: #fff;
 }
 
-/* Modal paramètres */
+/* --- Modal paramètres --------------------------------------------------- */
+
 .settings-overlay {
   position: absolute;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0,0,0,0.5);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
   z-index: 300;
   pointer-events: auto;
 }
 
 .settings-panel {
-  width: 300px;
-  padding: 24px;
+  width: 340px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 22px 24px 24px;
   display: flex;
   flex-direction: column;
   text-align: left;
+  /* Le panneau porte seul la séparation d'avec l'arrière-plan. */
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* Ascenseur discret : le panneau dépasse vite sur un HUD peu haut. */
+.settings-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+.settings-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .settings-panel h2 {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
-  margin-bottom: 20px;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px 0;
+  flex-shrink: 0;
+}
+
+/* Chaque section respire et se sépare de la suivante par un filet. Sans cette
+   règle, le bouton d'une section touchait le titre de la suivante. */
+.settings-section {
+  padding: 18px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 8px;
 }
 
 .settings-section h3 {
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .settings-group {
@@ -221,69 +364,106 @@
   accent-color: #deff9a;
 }
 
+/* Les deux tests de bracelet tiennent côte à côte : leurs libellés sont
+   courts et les empiler allongeait le panneau sans raison. */
 .settings-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 8px;
+}
+
+.settings-actions > button {
+  flex: 1;
+}
+
+.btn-test-severe,
+.btn-test-vigilance {
+  color: #111;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 30px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s ease, transform 0.2s ease;
 }
 
 .btn-test-severe {
   background-color: #ff5c5c;
   color: #fff;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 30px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .btn-test-vigilance {
   background-color: #ffa500;
-  color: #fff;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 30px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
+}
+
+.btn-test-severe:hover,
+.btn-test-vigilance:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
 }
 
 .btn-outline {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   color: #fff;
-  padding: 12px 24px;
+  padding: 10px 18px;
   border-radius: 30px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  margin-top: 16px;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .btn-outline:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* Le bouton de fermeture est le dernier enfant direct du panneau : il porte
+   seul sa marge, au lieu d'une marge globale qui décalait aussi les boutons
+   placés en ligne. */
+.settings-panel > .btn-outline:last-child {
+  margin-top: 18px;
+  align-self: stretch;
+}
+
+.settings-section .btn-primary,
+.settings-section .btn-outline {
+  align-self: flex-start;
+  margin-top: 0;
+}
+
+.settings-section .btn-primary {
+  padding: 10px 20px;
+  font-size: 13px;
+  margin-top: 14px;
 }
 
 /* --- Section audio (SettingsModal) --- */
 .settings-hint {
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   color: rgba(255, 255, 255, 0.5);
-  margin: 0 0 12px 0;
+  margin: 0 0 14px 0;
 }
 
 .settings-error {
   font-size: 12px;
+  line-height: 1.5;
   color: #ff5c5c;
+  background: rgba(255, 92, 92, 0.1);
+  border: 1px solid rgba(255, 92, 92, 0.25);
+  border-radius: 8px;
+  padding: 8px 10px;
   margin: 0 0 12px 0;
 }
 
 .settings-label {
-  font-size: 13px;
+  font-size: 12px;
   display: block;
   margin-bottom: 6px;
-  color: #fff;
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .settings-select {
@@ -296,6 +476,12 @@
   font-size: 13px;
   outline: none;
   cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.settings-select:hover,
+.settings-select:focus {
+  border-color: rgba(222, 255, 154, 0.5);
 }
 
 .settings-select option {
@@ -307,32 +493,37 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 14px 0 4px 0;
+  margin: 14px 0 0 0;
 }
 
 .audio-test-row .btn-outline {
-  margin-top: 0;
   white-space: nowrap;
-  padding: 10px 16px;
+  padding: 9px 14px;
+  flex-shrink: 0;
+  /* Annule le flex-start hérité de .settings-section : dans une rangée,
+     l'axe transversal est le vertical, et le bouton doit rester centré sur
+     la jauge de niveau. */
+  align-self: center;
 }
 
 .audio-level-bar {
   flex: 1;
-  height: 10px;
+  height: 8px;
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 5px;
+  border-radius: 4px;
   overflow: hidden;
 }
 
 .audio-level-fill {
   height: 100%;
   width: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   transition: width 0.15s linear, background-color 0.3s ease;
 }
 
 .audio-level-text {
   font-size: 12px;
-  margin: 6px 0 0 0;
+  line-height: 1.45;
+  margin: 8px 0 0 0;
   min-height: 16px;
 }

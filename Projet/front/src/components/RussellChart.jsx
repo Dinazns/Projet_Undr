@@ -8,6 +8,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js'
+import { translateEmotion, useI18n } from '../lib/i18n'
 
 Chart.register(ScatterController, PointElement, LinearScale, LineElement, Tooltip, Legend)
 
@@ -20,6 +21,7 @@ Chart.register(ScatterController, PointElement, LinearScale, LineElement, Toolti
  *            L'un des deux points peut être absent (null).
  */
 export default function RussellChart({ entry }) {
+  const { lang, t } = useI18n()
   const canvasRef = useRef(null)
   const chartRef = useRef(null)
 
@@ -33,7 +35,7 @@ export default function RussellChart({ entry }) {
     const datasets = []
     if (faceC && Array.isArray(faceC) && faceC.length === 2) {
       datasets.push({
-        label: `Visage${entry?.face ? ` (${entry.face})` : ''}`,
+        label: `${t('face')}${entry?.face ? ` (${translateEmotion(entry.face, lang)})` : ''}`,
         data: [{ x: faceC[0], y: faceC[1] }],
         backgroundColor: '#deff9a',
         borderColor: '#9bd400',
@@ -43,7 +45,7 @@ export default function RussellChart({ entry }) {
     }
     if (voiceC && Array.isArray(voiceC) && voiceC.length === 2) {
       datasets.push({
-        label: `Voix${entry?.voice ? ` (${entry.voice})` : ''}`,
+        label: `${t('voice')}${entry?.voice ? ` (${translateEmotion(entry.voice, lang)})` : ''}`,
         data: [{ x: voiceC[0], y: voiceC[1] }],
         backgroundColor: '#ff8c5c',
         borderColor: '#ff5c5c',
@@ -58,7 +60,7 @@ export default function RussellChart({ entry }) {
       voiceC && Array.isArray(voiceC) && voiceC.length === 2
     ) {
       datasets.push({
-        label: 'Incongruence (visage ↔ voix)',
+        label: t('incongruence'),
         data: [
           { x: faceC[0], y: faceC[1] },
           { x: voiceC[0], y: voiceC[1] },
@@ -88,7 +90,7 @@ export default function RussellChart({ entry }) {
             callbacks: {
               label: (ctx) => {
                 const p = ctx.raw
-                return `${ctx.dataset.label} : V=${p.x?.toFixed(2)}, A=${p.y?.toFixed(2)}`
+                return `${ctx.dataset.label}${t('labelSep')}V=${p.x?.toFixed(2)}, A=${p.y?.toFixed(2)}`
               },
             },
           },
@@ -97,14 +99,14 @@ export default function RussellChart({ entry }) {
           x: {
             min: -1,
             max: 1,
-            title: { display: true, text: 'Valence (− négatif → + positif)', color: 'rgba(255,255,255,0.6)' },
+            title: { display: true, text: t('axisValence'), color: 'rgba(255,255,255,0.6)' },
             grid: { color: (c) => (c.tick.value === 0 ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.08)') },
             ticks: { color: 'rgba(255,255,255,0.6)', stepSize: 0.5 },
           },
           y: {
             min: -1,
             max: 1,
-            title: { display: true, text: 'Arousal (− calme → + actif)', color: 'rgba(255,255,255,0.6)' },
+            title: { display: true, text: t('axisArousal'), color: 'rgba(255,255,255,0.6)' },
             grid: { color: (c) => (c.tick.value === 0 ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.08)') },
             ticks: { color: 'rgba(255,255,255,0.6)', stepSize: 0.5 },
           },
@@ -118,7 +120,7 @@ export default function RussellChart({ entry }) {
         chartRef.current = null
       }
     }
-  }, [entry])
+  }, [entry, lang, t])
 
   return <canvas ref={canvasRef} />
 }

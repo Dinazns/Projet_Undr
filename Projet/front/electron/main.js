@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, session } = require('electron')
 const path = require('path')
 const { pathToFileURL } = require('url')
 const fs = require('fs')
@@ -44,6 +44,10 @@ function buildSessionReportHtml(payload) {
     : new Date().toLocaleString('fr-FR')
 
   const summary = payload?.session_summary || {}
+
+  const consentLine = payload?.consent_recorded_at
+    ? `recueilli par le praticien le ${new Date(payload.consent_recorded_at).toLocaleString('fr-FR')}`
+    : 'non tracé'
   const notes = payload?.clinical_notes
     ? `<div class="notes">${escapeHtml(payload.clinical_notes)}</div>`
     : '<div class="notes notes-empty">Aucune note clinique saisie.</div>'
@@ -200,6 +204,7 @@ function buildSessionReportHtml(payload) {
             <div class="meta">
               <div><strong>Date d'export :</strong> ${escapeHtml(exportedAt)}</div>
               <div><strong>Application :</strong> ${escapeHtml(payload?.app || 'Undr')}</div>
+              <div><strong>Consentement patient :</strong> ${escapeHtml(consentLine)}</div>
             </div>
           </div>
 
@@ -418,7 +423,15 @@ ipcMain.on('stop-session', () => {
   }
 })
 
-ipcMain.on('close-app', () => {
+ipcMain.on('close-app', async () => {
+  // Filet de sécurité : purge du stockage local du renderer avant de quitter,
+  // pour qu'aucune donnée de séance ne persiste sur le disque entre deux
+  // patients. Complète le store.clearDissonances() côté Dashboard.
+  try {
+    await session.defaultSession.clearStorageData({ storages: ['localstorage'] })
+  } catch (e) {
+    console.error('Erreur lors de la purge du stockage local:', e)
+  }
   app.quit()
 })
 

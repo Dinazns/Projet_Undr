@@ -1,3 +1,5 @@
 export const API_BASE = 'http://127.0.0.1:8000'
 export const WS_URL = 'ws://127.0.0.1:8000/ws'
 export const DISSONANCE_DATA_KEY = 'dissonanceData'
+export const CONSENT_KEY = 'consentRecordedAt'
+export const LANG_KEY = 'uiLang'

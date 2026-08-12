@@ -6,10 +6,12 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js'
+import { useI18n } from '../lib/i18n'
 
 Chart.register(DoughnutController, ArcElement, Tooltip, Legend)
 
 export default function ValenceChart({ positive, negative, neutral = 0 }) {
+  const { t } = useI18n()
   const canvasRef = useRef(null)
   const chartRef = useRef(null)
 
@@ -21,7 +23,7 @@ export default function ValenceChart({ positive, negative, neutral = 0 }) {
     chartRef.current = new Chart(ctx, {
       type: 'doughnut',
         data: {
-          labels: ['Positif (voix + visage)', 'Négatif (voix + visage)', 'Neutre (voix + visage)'],
+          labels: [t('positive'), t('negative'), t('neutral')],
           datasets: [
             {
               data: [positive, negative, neutral],
@@ -50,7 +52,7 @@ export default function ValenceChart({ positive, negative, neutral = 0 }) {
         chartRef.current = null
       }
     }
-      }, [positive, negative, neutral])
+      }, [positive, negative, neutral, t])
 
   return <canvas ref={canvasRef} />
 }

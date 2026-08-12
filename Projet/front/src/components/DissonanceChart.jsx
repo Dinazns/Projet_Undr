@@ -11,7 +11,7 @@ import {
   Filler,
 } from 'chart.js'
 import zoomPlugin from 'chartjs-plugin-zoom'
-import { translateEmotion } from '../lib/i18n'
+import { translateEmotion, useI18n } from '../lib/i18n'
 
 Chart.register(
   LineController,
@@ -40,6 +40,7 @@ const ALERT_RADIUS = {
 }
 
 export default function DissonanceChart({ data, onSelectEntry }) {
+  const { lang, t } = useI18n()
   const canvasRef = useRef(null)
   const chartRef = useRef(null)
 
@@ -66,7 +67,7 @@ export default function DissonanceChart({ data, onSelectEntry }) {
         labels,
         datasets: [
           {
-            label: 'Niveau de Dissonance',
+            label: t('dissonanceLevel'),
             data: values,
             borderColor: '#deff9a',
             backgroundColor: 'rgba(222, 255, 154, 0.1)',
@@ -105,9 +106,9 @@ export default function DissonanceChart({ data, onSelectEntry }) {
               label: (context) => {
                 const raw = context.raw
                 return [
-                  `Dissonance : ${context.parsed.y}%`,
-                  `Visage : ${translateEmotion(raw.face) || 'N/A'}`,
-                  `Voix : ${translateEmotion(raw.voice) || 'N/A'}`,
+                  t('dissonanceTooltip', { v: context.parsed.y }),
+                  t('faceTooltip', { v: translateEmotion(raw.face, lang) || 'N/A' }),
+                  t('voiceTooltip', { v: translateEmotion(raw.voice, lang) || 'N/A' }),
                 ]
               },
             },
@@ -154,7 +155,7 @@ export default function DissonanceChart({ data, onSelectEntry }) {
         chartRef.current = null
       }
     }
-  }, [data, onSelectEntry])
+  }, [data, onSelectEntry, lang, t])
 
   return <canvas ref={canvasRef} />
 }

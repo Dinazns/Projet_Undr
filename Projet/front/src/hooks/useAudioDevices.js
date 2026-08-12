@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useElectron } from './useElectron'
+import { t } from '../lib/i18n'
 
 /**
  * Hook de gestion du périphérique de capture audio (loopback).
@@ -16,7 +17,7 @@ export function useAudioDevices() {
 
   const refresh = useCallback(async () => {
     if (!electron?.audioDevices) {
-      setError('API audio non disponible (backend éteint ?)')
+      setError(t('audioApiUnavailable'))
       return
     }
     setLoading(true)
@@ -28,7 +29,7 @@ export function useAudioDevices() {
       setDefaultSpeaker(data.default_speaker || null)
       if (data.error) setError(data.error)
     } catch (e) {
-      setError(e.message || 'Erreur de liste audio')
+      setError(e.message || t('audioListError'))
     } finally {
       setLoading(false)
     }
@@ -41,7 +42,7 @@ export function useAudioDevices() {
   const testDevice = useCallback(
     async (deviceId, duration = 1.5) => {
       if (!electron?.audioTest) {
-        throw new Error('API test audio non disponible')
+        throw new Error(t('audioTestUnavailable'))
       }
       return await electron.audioTest(deviceId || null, duration)
     },
@@ -51,7 +52,7 @@ export function useAudioDevices() {
   const selectDevice = useCallback(
     async (deviceId) => {
       if (!electron?.audioSetDevice) {
-        throw new Error('API choix audio non disponible')
+        throw new Error(t('audioSelectUnavailable'))
       }
       const res = await electron.audioSetDevice(deviceId || null)
       if (res?.status === 'ok') {
