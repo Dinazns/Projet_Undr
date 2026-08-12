@@ -23,6 +23,27 @@ portent donc sur le système effectivement exécuté, pas sur une réimplémenta
 `evaluate_corpus.py` fournit les briques communes, les autres bancs l'importent.
 Le supprimer casserait l'ensemble.
 
+## Quelle commande produit quel chiffre
+
+Chaque mesure publiée vient d'une commande précise. Les voici, dans la
+configuration exacte qui a servi. Toutes utilisent `--live`, sans quoi les
+chiffres ne décriraient pas le dispositif tel qu'il tourne en séance.
+
+| Mesure publiée | Commande |
+|---|---|
+| AUC sur dissonances nettes, effectifs, compromis sensibilité/spécificité | `python -m tools.benchmark --labels crema_labels_strict.csv --media ../../crema-d --live` |
+| AUC sur le corpus entier, extraits ambigus compris | `python -m tools.benchmark --labels crema_labels.csv --media ../../crema-d --limit 400 --live` |
+| Latence de bout en bout, répartition du temps de calcul, empreinte mémoire | `python -m tools.latency --video ../../Video/generated_video.mp4 --windows 20 --captures 100` |
+| Taux de détection par configuration d'émotions, répartition de la gradation | `python -m tools.evaluate_corpus --corpus ../../Actor_04 --mode croise --live` |
+| Distance mesurée en lecture directe d'un fichier | `python -m tools.replay --video ../../Video/generated_video.mp4` |
+| Coût de la chaîne d'acquisition, effet des calques du HUD | `python -m tools.selftest --video ... --hud aucun` puis `--hud parametres` |
+| Comptage des dissonances perçues dans CREMA-D | `python -m tools.crema_incongruence --responses finishedResponses.csv --out .` |
+
+Les deux premières impriment l'aire sous la courbe et son intervalle de
+confiance, qui sont les chiffres de référence. L'intervalle vient d'un
+rééchantillonnage aléatoire : son troisième chiffre après la virgule varie d'une
+exécution à l'autre, il ne faut donc pas le publier au-delà de deux décimales.
+
 ## Prérequis
 
 ```bash
@@ -224,7 +245,8 @@ jugement humain, sans aucune manipulation du signal.
 python -m tools.crema_incongruence --summary summaryTable.csv --out .
 
 # 2. téléchargement des seuls clips étiquetés (~100 Mo au lieu de 7,5 Go)
-python -m tools.crema_fetch --labels crema_labels.csv --out crema_media
+#    --repo pointe sur le clone du miroir GitLab, fait sans les médias
+python -m tools.crema_fetch --labels crema_labels.csv --repo ../../crema-d
 
 # 3. mesure sur les enregistrements réels
 python -m tools.benchmark --labels crema_labels.csv --media crema_media --degrade

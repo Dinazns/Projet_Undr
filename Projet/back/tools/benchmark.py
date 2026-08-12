@@ -180,6 +180,62 @@ def metriques(tp, fp, tn, fn):
     return sens, spec, (sens + spec) / 2, prec, f1
 
 
+def _rangs_moyens(valeurs):
+    """Rangs des valeurs, les ex aequo recevant la moyenne de leurs rangs."""
+    ordre = np.argsort(valeurs, kind="mergesort")
+    triees = valeurs[ordre]
+    rangs = np.empty(valeurs.size, dtype=np.float64)
+    i = 0
+    while i < triees.size:
+        j = i
+        while j + 1 < triees.size and triees[j + 1] == triees[i]:
+            j += 1
+        rangs[ordre[i:j + 1]] = (i + j) / 2.0 + 1.0
+        i = j + 1
+    return rangs
+
+
+def aire_sous_courbe(pos, neg):
+    """
+    Aire sous la courbe ROC, par la statistique de Mann-Whitney.
+
+    Se lit directement : c'est la proportion de fois ou un enregistrement
+    dissonant tire au hasard recoit un ecart plus grand qu'un enregistrement
+    congruent tire au hasard. 0,5 correspond au hasard, 1 a une separation
+    parfaite. Contrairement a l'exactitude, cette mesure ne depend d'aucun
+    seuil : elle resume le pouvoir de discrimination sur toute la plage.
+    """
+    pos = np.asarray(pos, dtype=np.float64)
+    neg = np.asarray(neg, dtype=np.float64)
+    if pos.size == 0 or neg.size == 0:
+        return float("nan")
+    rangs = _rangs_moyens(np.concatenate([pos, neg]))
+    somme_pos = rangs[:pos.size].sum()
+    return float((somme_pos - pos.size * (pos.size + 1) / 2.0) / (pos.size * neg.size))
+
+
+def intervalle_bootstrap(pos, neg, iterations=2000, graine=0):
+    """
+    Intervalle de confiance a 95 % de l'AUC, par reechantillonnage avec remise.
+
+    L'AUC est estimee sur un echantillon : elle vaudrait autre chose sur un
+    autre tirage. Rejouer le tirage des milliers de fois donne l'etendue
+    plausible de cette variation. Un intervalle qui exclut 0,5 signifie que la
+    discrimination observee ne s'explique pas par le hasard d'echantillonnage,
+    ce qui est la seule facon honnete d'affirmer que le dispositif detecte.
+    """
+    tirage = np.random.default_rng(graine)
+    pos = np.asarray(pos, dtype=np.float64)
+    neg = np.asarray(neg, dtype=np.float64)
+    valeurs = np.empty(iterations, dtype=np.float64)
+    for k in range(iterations):
+        valeurs[k] = aire_sous_courbe(
+            tirage.choice(pos, pos.size, replace=True),
+            tirage.choice(neg, neg.size, replace=True),
+        )
+    return float(np.percentile(valeurs, 2.5)), float(np.percentile(valeurs, 97.5))
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -282,9 +338,31 @@ def main():
         return 1
 
     scores = np.array([e[2] for e in exploitables])
+    scores_pos = [e[2] for e in pos]
+    scores_neg = [e[2] for e in neg]
     print()
     print("  distance mesuree | positifs : mediane %.2f | negatifs : mediane %.2f"
-          % (np.median([e[2] for e in pos]), np.median([e[2] for e in neg])))
+          % (np.median(scores_pos), np.median(scores_neg)))
+
+    auc = aire_sous_courbe(scores_pos, scores_neg)
+    borne_basse, borne_haute = intervalle_bootstrap(scores_pos, scores_neg)
+    print()
+    print("=" * 78)
+    print("POUVOIR DE DISCRIMINATION, INDEPENDANT DU SEUIL")
+    print("=" * 78)
+    print("  AUC                        : %.3f" % auc)
+    print("  intervalle de confiance 95%% : [%.3f ; %.3f]  (bootstrap, 2000 tirages)"
+          % (borne_basse, borne_haute))
+    print()
+    print("  Lecture : sur un enregistrement dissonant et un enregistrement congruent")
+    print("  tires au hasard, le dispositif attribue le plus grand ecart au bon des")
+    print("  deux dans %.0f %% des cas." % (100 * auc))
+    if borne_basse > 0.5:
+        print("  L'intervalle exclut 0,50 : la discrimination ne s'explique pas par le")
+        print("  hasard d'echantillonnage.")
+    else:
+        print("  ATTENTION : l'intervalle contient 0,50, soit la valeur du hasard.")
+        print("  Le resultat n'est pas distinguable d'une decision aleatoire.")
 
     print()
     print("=" * 78)
@@ -343,6 +421,10 @@ def main():
                         "exactitude_equilibree", "precision", "F1"])
             for r in resultats:
                 w.writerow([round(r[0], 3)] + list(r[1:5]) + [round(100 * x, 1) for x in r[5:]])
+            w.writerow([])
+            w.writerow(["auc", "ic95_bas", "ic95_haut", "n_positifs", "n_negatifs"])
+            w.writerow([round(auc, 4), round(borne_basse, 4), round(borne_haute, 4),
+                        len(pos), len(neg)])
         print()
         print("  Resultats detailles ecrits dans %s" % args.csv)
 
