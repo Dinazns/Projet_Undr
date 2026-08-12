@@ -1,18 +1,23 @@
+# Environnement de référence (celui des mesures rapportées) :
+#   Python 3.10 · transformers 5.14 · torch 2.13 · mediapipe 0.10.35
+#   onnxruntime 1.23 · opencv 5.0 · numpy 2.2
+# La classe de régression vocale redéfinie dans emotion_service.py suit l'API
+# transformers 5.x (post_init) : une version 4.x nécessiterait init_weights().
+bleak
+emotiefflib
+fastapi
+librosa
+mediapipe
 mss
 numpy
+onnxruntime
+opencv-python
 Pillow
 python-dotenv
+requests
 soundcard
 soundfile
-websockets
-fastapi
-uvicorn
-fer
-emotiefflib
-opencv-python
-bleak
-mediapipe
-librosa
 torch
-torchaudio
-transformers
+transformers>=5.0
+uvicorn
+websockets

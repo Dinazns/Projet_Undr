@@ -124,7 +124,7 @@ FACE_MIN_MARGIN = float(os.getenv("FACE_MIN_MARGIN", "8.0"))
 # Que faire quand cette porte rejette le label alors que le point mesuré, lui,
 # reste stable ? Le cas est fréquent sur un visage qui parle : l'expression
 # évolue d'une image à l'autre, la distribution moyennée s'aplatit et aucune
-# classe ne se détache — alors même que les points restent groupés au même
+# classe ne se détache, alors même que les points restent groupés au même
 # endroit du plan (dispersion faible).
 #   True (défaut) : le label est alors dérivé du point médian, comme le fait
 #       déjà le canal vocal, et la fiabilité du canal est estimée sur la
@@ -157,8 +157,8 @@ CALIBRATION_SAMPLE_LIMIT = int(os.getenv("CALIBRATION_SAMPLE_LIMIT", "2000"))
 
 # Confrontation cross-modale (voir apply_cross_modal_check).
 #   "desactive" (défaut) : la fiabilité de chaque canal est estimée à
-#       l'intérieur de ce canal — dispersion intra-fenêtre côté visage,
-#       concordance des sous-fenêtres côté voix. Jamais par comparaison avec
+#       l'intérieur de ce canal, par la dispersion intra-fenêtre côté visage et
+#       la concordance des sous-fenêtres côté voix. Jamais par comparaison avec
 #       l'autre canal : ce serait circulaire, puisque le désaccord entre les
 #       deux canaux est précisément l'objet de la mesure.
 #   "penalite" : la fiabilité du canal visuel est réduite quand la voix le
@@ -181,7 +181,7 @@ FACE_VETO_ENABLED = FACE_VETO_MODE != "desactive"
 #       ce qui est fait sur le visage.
 #   "intensite" (ancien) : la confiance était la distance au centre du plan.
 #       Cette approche confond fiabilité et intensité émotionnelle : une voix
-#       atone produisait une confiance nulle et faisait rejeter la fenêtre — or
+#       atone produisait une confiance nulle et faisait rejeter la fenêtre. Or
 #       « sourire social + voix plate » est une présentation typique du masquage,
 #       c'est-à-dire précisément le cas que le dispositif cherche à détecter.
 VOICE_CONFIDENCE_MODE = os.getenv("VOICE_CONFIDENCE_MODE", "stabilite").lower()
@@ -231,9 +231,9 @@ FACE_VETO_MAX_CONFIDENCE = float(os.getenv("FACE_VETO_MAX_CONFIDENCE", "45.0"))
 # PERSISTENCE_MIN = 1 : la vibration part dès la première fenêtre dissonante.
 # La règle avait été introduite quand une seule image pouvait porter la
 # décision : une erreur ponctuelle du classifieur suffisait alors à déclencher
-# l'alerte. Ce n'est plus le cas — chaque fenêtre agrège désormais une dizaine
-# d'images, résumées par une médiane et écartées si elles se dispersent trop :
-# le filtrage des erreurs transitoires a lieu À L'INTÉRIEUR de la fenêtre.
+# l'alerte. Ce n'est plus le cas. Chaque fenêtre agrège désormais une dizaine
+# d'images, résumées par une médiane et écartées si elles se dispersent trop,
+# donc le filtrage des erreurs transitoires a lieu À L'INTÉRIEUR de la fenêtre.
 # Exiger une seconde fenêtre faisait donc doublon, au prix d'un retard de trois
 # secondes qui repoussait l'alerte hors du silence thérapeutique visé.
 # La protection contre la fatigue d'alarme repose sur le délai réfractaire

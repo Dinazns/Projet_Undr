@@ -614,7 +614,7 @@ class EmotionService:
         La fenêtre est découpée en sous-fenêtres recouvrantes et la CONCORDANCE
         de leurs estimations sert d'indice de fiabilité. C'est ce qui remplace
         l'ancienne confiance fondée sur l'intensité : cette dernière confondait
-        fiabilité et amplitude émotionnelle, et rejetait donc les voix atones —
+        fiabilité et amplitude émotionnelle, et rejetait donc les voix atones,
         c'est-à-dire une partie des masquages que le dispositif recherche.
 
         Returns: (label_proche, fiabilité, (valence, arousal))
@@ -802,9 +802,9 @@ class EmotionService:
         Surtout, il est circulaire : il utilise le DÉSACCORD entre les deux
         canaux comme critère pour disqualifier l'un d'eux, alors que ce désaccord
         est précisément l'objet de la mesure. La fiabilité de chaque canal est
-        désormais estimée à l'intérieur de ce canal — dispersion intra-fenêtre
-        côté visage, concordance des sous-fenêtres côté voix — et jamais par
-        comparaison avec l'autre.
+        désormais estimée à l'intérieur de ce canal, par la dispersion
+        intra-fenêtre côté visage et la concordance des sous-fenêtres côté voix,
+        et jamais par comparaison avec l'autre.
 
         Conservé activable (FACE_VETO_MODE) pour pouvoir mesurer l'écart entre
         les deux comportements sur un même corpus.

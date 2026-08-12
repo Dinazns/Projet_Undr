@@ -3,15 +3,16 @@ API FastAPI principale - Point d'entrée de l'application.
 Gère la connexion WebSocket avec le frontend, la capture audio/vidéo et la détection de dissonance.
 """
 import asyncio
+import functools
 import logging
 import os
 import sys
 import time
 import warnings
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from contextlib import asynccontextmanager
-from typing import Dict, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import soundcard as sc
@@ -34,10 +35,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Imports des modules locaux
 from config import (
-    API_HOST, API_PORT, DEBUG, SEUIL_MIN_VISAGE, SEUIL_MIN_VOIX, SAMPLERATE,
-    AUDIO_DEVICE, PERSISTENCE_WINDOW, PERSISTENCE_MIN, VIBRATION_COOLDOWN_SECONDS,
+    API_HOST, API_PORT, DEBUG, SAMPLERATE, AUDIO_DEVICE,
+    ANALYSIS_WINDOW_SECONDS, FACE_SAMPLE_INTERVAL, FACE_MIN_SAMPLES,
 )
-from services import ble_service, emotion_service
+from services import ble_service, emotion_service, AnalysisSession
 from utils import ScreenCapture
 import numpy as np
 
@@ -56,6 +57,8 @@ async def lifespan(app: FastAPI):
     # Code exécuté à l'arrêt
     logger.info("Arrêt de l'application...")
     await ble_service.disconnect()
+    for executor in (_face_executor, _voice_executor, _audio_executor):
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 # Créer l'application FastAPI
@@ -67,9 +70,74 @@ app = FastAPI(
 )
 
 
+# Trois exécuteurs à un seul thread, un par ressource bloquante.
+#
+# Les moteurs d'inférence embarqués ne sont pas tous garantis thread-safe :
+# l'interpréteur TFLite de MediaPipe ne l'est pas, et les objets de capture
+# WASAPI de soundcard supportent mal le changement de thread. asyncio.to_thread
+# puise dans un pool partagé et fait donc migrer chaque appel d'un thread à
+# l'autre. Confiner chaque modèle à un thread unique supprime ce risque, évite
+# le coût de va-et-vient entre threads (environ huit fois par fenêtre côté
+# visage) et garantit qu'aucune inférence ne peut s'exécuter en parallèle d'une
+# autre sur le même modèle.
+_face_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="undr-face")
+_voice_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="undr-voice")
+_audio_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="undr-audio")
+
+# Demande de réinitialisation du contexte, posée par le client entre deux
+# séquences ou au début d'une séance.
+_reset_requested = asyncio.Event()
+
+
+async def _sample_face_window(screen_capture: ScreenCapture, duration: float) -> list:
+    """
+    Échantillonne le visage PENDANT la fenêtre audio, à cadence régulière.
+
+    C'est le correctif du décalage entre canaux. L'ancienne boucle capturait une
+    seule image APRÈS les 3 s d'enregistrement : on comparait donc un instantané
+    pris à t+3 s à une moyenne prosodique couvrant [t, t+3 s]. Les deux mesures
+    ne portaient pas sur le même moment, et une expression apparue en début de
+    fenêtre était systématiquement manquée.
+
+    La capture d'écran (mss) reste sur la boucle d'événements, mss n'étant pas
+    thread-safe. Seule l'inférence part dans un thread, ce qui laisse
+    l'enregistrement audio progresser en parallèle.
+    """
+    loop = asyncio.get_running_loop()
+    samples = []
+    deadline = time.monotonic() + duration
+    while True:
+        if deadline - time.monotonic() <= 0:
+            break
+        tick = time.monotonic()
+        # Image transmise telle quelle (ndarray BGR) : aucun encodage JPEG ni
+        # base64 intermédiaire, tout se passe dans le même processus.
+        frame = screen_capture.capture_hud_array()
+        if frame is not None:
+            sample = await loop.run_in_executor(
+                _face_executor, emotion_service.analyze_face_frame, frame
+            )
+            if sample:
+                samples.append(sample)
+        elapsed = time.monotonic() - tick
+        pause = min(
+            max(0.0, FACE_SAMPLE_INTERVAL - elapsed),
+            max(0.0, deadline - time.monotonic()),
+        )
+        if pause > 0:
+            await asyncio.sleep(pause)
+    return samples
+
+
 async def process_stream(websocket: WebSocket, screen_capture: ScreenCapture):
     """
-    Traite le flux audio et vidéo et envoie les résultats au frontend.
+    Boucle d'analyse. Une itération = une fenêtre temporelle unique, décrite
+    simultanément par le canal vocal (enregistrement continu) et par le canal
+    visuel (plusieurs images échantillonnées pendant ce même enregistrement).
+
+    Cette fonction ne fait qu'acquérir les deux canaux et transmettre les
+    résultats : toute la logique de décision est dans AnalysisSession, partagée
+    avec le banc d'évaluation hors ligne (tools/evaluate_corpus.py).
     """
     try:
         # Périphérique loopback : celui configuré, sinon le HP par défaut.
@@ -81,104 +149,145 @@ async def process_stream(websocket: WebSocket, screen_capture: ScreenCapture):
             logger.info(f"Interception audio sur haut-parleur par defaut : {device_id}")
         micro_loopback = sc.get_microphone(id=device_id, include_loopback=True)
 
-        # Persistance : la vibration exige une dissonance confirmée sur plusieurs
-        # fenêtres. Cooldown : délai minimum entre deux vibrations.
-        recent_dissonant = deque(maxlen=PERSISTENCE_WINDOW)
-        last_vibration_ts = 0.0
+        session = AnalysisSession(emotion_service)
+        _reset_requested.clear()
+
+        loop = asyncio.get_running_loop()
+        n_frames = int(SAMPLERATE * ANALYSIS_WINDOW_SECONDS)
+        expected_frames = int(ANALYSIS_WINDOW_SECONDS / FACE_SAMPLE_INTERVAL)
+        logger.info(
+            "Fenêtre d'analyse : %.1f s | échantillonnage visage toutes les %.2f s "
+            "(%d images attendues, minimum %d)",
+            ANALYSIS_WINDOW_SECONDS, FACE_SAMPLE_INTERVAL,
+            expected_frames, FACE_MIN_SAMPLES,
+        )
+        if expected_frames < FACE_MIN_SAMPLES:
+            logger.warning(
+                "Configuration incohérente : au mieux %d image(s) par fenêtre alors "
+                "que FACE_MIN_SAMPLES vaut %d. Aucune fenêtre ne sera exploitable. "
+                "Baissez FACE_SAMPLE_INTERVAL ou FACE_MIN_SAMPLES.",
+                expected_frames, FACE_MIN_SAMPLES,
+            )
 
         with micro_loopback.recorder(samplerate=SAMPLERATE) as recorder:
             while True:
-                # Vérifier la connexion WebSocket
                 if websocket.client_state.name == "DISCONNECTED":
                     logger.info("Client déconnecté, arrêt du flux")
                     break
 
-                # Fenêtre audio de 3 s : assez de contexte pour une estimation
-                # vocale stable.
-                AUDIO_WINDOW_SECONDS = 3
-                audio_data = await asyncio.to_thread(
-                    recorder.record, numframes=int(SAMPLERATE * AUDIO_WINDOW_SECONDS)
-                )
-                image_base64 = screen_capture.capture_hud()
+                if _reset_requested.is_set():
+                    _reset_requested.clear()
+                    session.reset(reason="demande du client")
 
-                face_emotion, face_score, face_coords = None, 0.0, None
-                if image_base64:
-                    face_emotion, face_score, face_coords = await asyncio.to_thread(
-                        emotion_service.detect_face_emotion, image_base64
+                window_started = time.monotonic()
+
+                # Les deux canaux sont acquis sur le MÊME intervalle temporel.
+                audio_data, face_samples = await asyncio.gather(
+                    loop.run_in_executor(
+                        _audio_executor,
+                        functools.partial(recorder.record, numframes=n_frames),
+                    ),
+                    _sample_face_window(screen_capture, ANALYSIS_WINDOW_SECONDS),
+                )
+
+                # Toute la décision, dans le thread dédié à l'inférence vocale :
+                # c'est la seule inférence lourde de cette étape (le visage a
+                # déjà été inféré pendant l'acquisition).
+                outcome = await loop.run_in_executor(
+                    _voice_executor,
+                    session.process_window,
+                    face_samples, audio_data, SAMPLERATE,
+                )
+
+                window_seconds = time.monotonic() - window_started
+
+                if outcome.is_dissonant:
+                    logger.info(
+                        "Dissonance détectée ! Niveau: %s | Confiance: %.1f%% | "
+                        "Distance: %.2f | fenêtre=%.2f s | %d image(s) visage | "
+                        "dispersion=%.2f",
+                        outcome.alert_level, outcome.confidence, outcome.emotion_distance,
+                        window_seconds, outcome.n_face_samples, outcome.face_dispersion,
+                    )
+                    logger.info(
+                        "  Visage: %s (%.0f%%) | Voix: %s (%.0f%%)",
+                        outcome.face_emotion, outcome.face_score,
+                        outcome.voice_emotion, outcome.voice_score,
                     )
 
-                voice_emotion, voice_score, voice_coords = await asyncio.to_thread(
-                    emotion_service.detect_audio_emotion, audio_data, SAMPLERATE
-                )
+                    if outcome.should_vibrate:
+                        await ble_service.vibrate()
 
-                # Correction cross-modale : neutralise un label facial faible
-                # contredit par la voix. Un sourire franc + voix négative
-                # (masquage) est conservé.
-                face_emotion = emotion_service.reconcile_face_emotion(
-                    face_emotion, voice_coords, face_score
-                )
-
-                is_dissonant, confidence, alert_level, emotion_distance = False, 0.0, "NONE", 0.0
-                if face_emotion and face_score > SEUIL_MIN_VISAGE and voice_emotion and voice_score > SEUIL_MIN_VOIX:
-                    # voice_coords / face_coords : points continus (valence, arousal)
-                    # des deux canaux.
-                    is_dissonant, confidence, alert_level, emotion_distance = emotion_service.detect_dissonance(
-                        face_emotion, face_score, voice_emotion, voice_score, voice_coords, face_coords
-                    )
-
-                recent_dissonant.append(1 if is_dissonant else 0)
-
-                if is_dissonant:
-                        logger.info(
-                            f"Dissonance détectée ! Niveau: {alert_level}, Confiance: {confidence:.1f}%, Distance: {emotion_distance:.2f}"
-                        )
-                        logger.info(
-                            f"Visage: {face_emotion} ({face_score:.0f}% | Voix: {voice_emotion} ({voice_score:.0f}%"
-                        )
-
-                        # Vibration seulement sur MODERATE/SEVERE, si la dissonance
-                        # est confirmée sur plusieurs fenêtres, et hors cooldown.
-                        # VIGILANCE reste visible dans les logs et le dashboard.
-                        confirmed = sum(recent_dissonant) >= PERSISTENCE_MIN
-                        now = time.monotonic()
-                        if (
-                            alert_level in ("MODERATE", "SEVERE")
-                            and confirmed
-                            and now - last_vibration_ts >= VIBRATION_COOLDOWN_SECONDS
-                        ):
-                            await ble_service.vibrate()
-                            last_vibration_ts = now
-                        elif alert_level in ("MODERATE", "SEVERE") and not confirmed:
-                            logger.info(
-                                "Vibration différée : dissonance non confirmée (%d/%d fenêtres)",
-                                sum(recent_dissonant), PERSISTENCE_MIN,
-                            )
-
-                        # Coordonnées continues envoyées au dashboard (mapping de Russell).
-                        await websocket.send_json({
-                            "type": "dissonance",
-                            "timestamp": datetime.now().strftime("%H:%M:%S"),
-                            "value": float(confidence),
-                            "alert_level": alert_level,
-                            "face": f"{face_emotion} ({float(face_score):.0f}%)" if face_emotion else None,
-                            "voice": f"{voice_emotion} ({float(voice_score):.0f}%)" if voice_emotion else None,
-                            "quadrant_face": emotion_service.get_emotion_quadrant(face_emotion) if face_emotion else None,
-                            "quadrant_voice": emotion_service.get_emotion_quadrant(voice_emotion) if voice_emotion else None,
-                            "face_coords": list(face_coords) if face_coords else None,
-                            "voice_coords": list(voice_coords) if voice_coords else None,
-                            "emotion_distance": float(emotion_distance),
-                        })
+                    await websocket.send_json({
+                        "type": "dissonance",
+                        "timestamp": datetime.now().strftime("%H:%M:%S"),
+                        "value": float(outcome.confidence),
+                        "alert_level": outcome.alert_level,
+                        "face": (
+                            f"{outcome.face_emotion} ({float(outcome.face_score):.0f}%)"
+                            if outcome.face_emotion else None
+                        ),
+                        "voice": (
+                            f"{outcome.voice_emotion} ({float(outcome.voice_score):.0f}%)"
+                            if outcome.voice_emotion else None
+                        ),
+                        # Quadrants déduits du POINT mesuré, pas du label : les deux
+                        # sont des sorties distinctes du même réseau et peuvent se
+                        # contredire.
+                        "quadrant_face": emotion_service.quadrant_from_coords(outcome.face_coords),
+                        "quadrant_voice": emotion_service.quadrant_from_coords(outcome.voice_coords),
+                        "face_coords": list(outcome.face_coords) if outcome.face_coords else None,
+                        "voice_coords": list(outcome.voice_coords) if outcome.voice_coords else None,
+                        "emotion_distance": float(outcome.emotion_distance),
+                        # Métadonnées de fenêtre : sur quel support temporel la
+                        # mesure a réellement été faite. Traçabilité indispensable
+                        # pour reporter une latence honnête.
+                        "window_seconds": round(window_seconds, 2),
+                        "face_samples": int(outcome.n_face_samples),
+                        "face_dispersion": (
+                            round(float(outcome.face_dispersion), 3)
+                            if outcome.face_dispersion is not None else None
+                        ),
+                    })
                 else:
-                    if face_emotion:
-                        logger.debug(f"Visage: {face_emotion} ({face_score:.0f}%)")
-                    if voice_emotion:
-                        logger.debug(f"Voix: {voice_emotion} ({voice_score:.0f}%)")
+                    logger.debug(
+                        "Fenêtre non retenue (%s) | visage=%s voix=%s",
+                        outcome.skipped or "sous le seuil",
+                        outcome.face_emotion, outcome.voice_emotion,
+                    )
 
-                # Limiter la fréquence de traitement
-                await asyncio.sleep(0.5)
+                # Télémétrie envoyée à CHAQUE fenêtre, dissonance ou non.
+                # Sans elle, l'interface reste muette tant qu'aucune alerte ne se
+                # déclenche : pendant une démonstration, un système qui fonctionne
+                # correctement mais ne détecte rien est indiscernable d'un système
+                # en panne. Ces événements ne sont pas enregistrés côté tableau de
+                # bord, ils ne servent qu'à rendre l'analyse visible en direct.
+                await websocket.send_json({
+                    "type": "telemetry",
+                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                    "face": outcome.face_emotion,
+                    "face_score": round(float(outcome.face_score), 1),
+                    "voice": outcome.voice_emotion,
+                    "voice_score": round(float(outcome.voice_score), 1),
+                    "distance": round(float(outcome.emotion_distance), 3),
+                    "alert_level": outcome.alert_level,
+                    "face_samples": int(outcome.n_face_samples),
+                    "face_dispersion": (
+                        round(float(outcome.face_dispersion), 3)
+                        if outcome.face_dispersion is not None else None
+                    ),
+                    "skipped": outcome.skipped,
+                    "window_seconds": round(window_seconds, 2),
+                })
 
+                # Aucune pause supplémentaire : la fenêtre d'analyse cadence déjà
+                # la boucle (ANALYSIS_WINDOW_SECONDS + temps d'inférence).
+
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         logger.error(f"Erreur dans le flux: {e}", exc_info=True)
+
 
 
 @app.websocket("/ws")
@@ -210,6 +319,13 @@ async def websocket_endpoint(websocket: WebSocket):
             if data.get("type") == "test_vibration":
                 await ble_service.vibrate()
 
+            # Réinitialisation du contexte : à envoyer entre deux séquences de
+            # test, ou au début d'une séance. Sans cela, le premier visage d'une
+            # nouvelle scène est comparé à la voix de la scène précédente.
+            if data.get("type") == "reset_context":
+                _reset_requested.set()
+                logger.info("Réinitialisation du contexte demandée par le client")
+
     except WebSocketDisconnect:
         logger.info("Client déconnecté du WebSocket")
     except Exception as e:
@@ -218,10 +334,15 @@ async def websocket_endpoint(websocket: WebSocket):
         screen_capture.clear_hud_coords()
         if stream_task:
             stream_task.cancel()
+            # Une inférence déjà partie dans un exécuteur n'est pas annulable :
+            # au pire, on attend la fin de la fenêtre en cours. Le délai borne
+            # cette attente pour ne pas retenir la fermeture de la connexion.
             try:
-                await stream_task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(stream_task, ANALYSIS_WINDOW_SECONDS + 2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
+            except Exception as e:
+                logger.error("Erreur à l'arrêt du flux : %s", e)
 
 
 @app.get("/health")
@@ -230,7 +351,21 @@ async def health_check():
     return {
         "status": "healthy",
         "ble_connected": ble_service.is_connected,
+        # Latence du dernier write GATT, en ms. À utiliser pour reporter la
+        # latence BLE réelle plutôt que la durée du motif de vibration.
+        "last_ble_write_ms": ble_service.last_write_latency_ms,
+        "analysis_window_seconds": ANALYSIS_WINDOW_SECONDS,
+        "face_sample_interval": FACE_SAMPLE_INTERVAL,
     }
+
+
+@app.get("/calibration")
+async def calibration():
+    """
+    Distributions observées des deux canaux, pour calibrer l'harmonisation
+    d'échelle (EMOTIEFFLIB_VA_GAIN) sur des données réelles plutôt qu'au jugé.
+    """
+    return emotion_service.get_calibration_stats()
 
 
 @app.post("/ble/connect")
@@ -366,7 +501,11 @@ async def audio_set_device(payload: dict):
             f.writelines(lines)
 
         AUDIO_DEVICE = device_id  # reflet en mémoire pour le flux courant
-        logger.info(f"Périphérique audio persisté : {device_id}")
+        logger.info(
+            "Périphérique audio persisté : %s. Le flux en cours continue sur "
+            "l'ancien périphérique : relancer la session pour appliquer.",
+            device_id,
+        )
         return {"status": "ok", "device_id": AUDIO_DEVICE}
     except Exception as e:
         logger.error(f"Erreur écriture .env audio: {e}", exc_info=True)

@@ -76,9 +76,9 @@ class AnalysisSession:
         warmup_windows : nombre de fenêtres ignorées après une purge. Par défaut
             WARMUP_WINDOWS_AFTER_RESET. L'évaluation hors ligne peut le mettre à
             zéro : elle instancie une session neuve par clip, donc aucune mémoire
-            d'une scène précédente ne peut contaminer la première fenêtre — le
-            garde-fou n'a rien à protéger et coûterait la totalité des mesures
-            sur des extraits courts.
+            d'une scène précédente ne peut contaminer la première fenêtre. Le
+            garde-fou n'a alors rien à protéger et coûterait la totalité des
+            mesures sur des extraits courts.
         """
         self._service = emotion_service
         self._clock = clock
