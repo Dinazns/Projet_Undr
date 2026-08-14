@@ -92,10 +92,19 @@ back/
 ├── models/
 │   └── face_detector.task   # Modèle MediaPipe
 ├── tools/                   # Bancs de mesure hors ligne (voir tools/README.md)
+├── crema_labels.csv         # Jeu étiqueté dérivé de CREMA-D, corpus entier
+├── crema_labels_strict.csv  # Idem, restreint aux perceptions nettes
+├── crema_congruents.txt     # Listes brutes produites par crema_incongruence.py
+├── crema_discordants.txt
 ├── download_model.py        # Téléchargement du modèle MediaPipe
 ├── .env.example             # Configuration de référence
 └── requirements.txt
 ```
+
+Les quatre fichiers `crema_*` sont versionnés à dessein. Ce sont eux qui rendent
+les mesures reproductibles : les médias, trop lourds, ne le sont pas, mais
+n'importe qui peut les retélécharger et retrouver exactement le même jeu
+d'évaluation à partir de ces étiquettes.
 
 `analysis_session.py` contient toute la logique de décision appliquée à une
 fenêtre. La boucle temps réel et les bancs de mesure l'utilisent tous les deux,
@@ -119,6 +128,104 @@ Le premier démarrage télécharge le modèle vocal (~1 Go) depuis Hugging Face.
 ```bash
 python -m api.main
 ```
+
+## Reproduire les chiffres publiés
+
+Aucun chiffre du mémoire n'a été estimé. Chacun sort d'une commande du dossier
+`tools/`, exécutée sur le code de ce dépôt dans sa configuration par défaut. Cette
+section donne la commande exacte pour chacun, de sorte qu'un tiers puisse refaire
+la mesure et tomber sur la même valeur.
+
+Toutes les commandes se lancent depuis `Projet/back`, environnement virtuel activé.
+
+### Se procurer les corpus
+
+Les corpus ne sont pas versionnés, ils pèsent trop lourd. Les étiquettes, elles, le
+sont : `crema_labels.csv` et `crema_labels_strict.csv` sont dans le dépôt, ce qui
+permet de retrouver exactement le même jeu d'évaluation.
+
+```bash
+# CREMA-D : reconstruire les étiquettes à partir des votes d'annotateurs
+python -m tools.crema_incongruence --summary summaryTable.csv --out .
+
+# puis ne télécharger que les clips étiquetés (~100 Mo au lieu de 7,5 Go)
+python -m tools.crema_fetch --labels crema_labels.csv --repo ../../crema-d
+```
+
+RAVDESS se récupère sur https://zenodo.org/records/1188976. Un seul dossier
+d'acteur suffit, `Actor_04` est celui qui a servi. Le décodage des noms de fichiers
+est expliqué dans `tools/README.md`.
+
+### Quelle commande donne quel chiffre
+
+| Ce qui est publié | Commande |
+|---|---|
+| Près d'un enregistrement sur deux perçu différemment selon le canal, soit 3 678 dissonants contre 3 764 congruents sur 7 442 | `python -m tools.crema_incongruence --summary summaryTable.csv --out .` |
+| Aire sous la courbe 0,808 et son intervalle, 227 extraits exploitables sur 344, distances médianes 1,155 et 0,588, arbitrage 0,80 contre 0,94 | `python -m tools.benchmark --labels crema_labels_strict.csv --media ../../crema-d --live` |
+| Aire sous la courbe 0,639 sur le corpus entier, extraits ambigus compris | `python -m tools.benchmark --labels crema_labels.csv --media ../../crema-d --limit 400 --live` |
+| Délai de 3,45 s dont 446 ms de calcul, part du modèle vocal supérieure à 99 %, budget visage utilisé à moins de 7 %, 1,5 Go de mémoire et 10 % du processeur | `python -m tools.latency --video ../../Video/generated_video.mp4 --windows 20 --captures 100` |
+| Détection sur 268 des 344 fenêtres, taux par configuration d'émotions, répartition entre vigilance et vibration | `python -m tools.evaluate_corpus --corpus ../../Actor_04 --mode croise --live` |
+| Écart de 1,35 mesuré à travers la capture d'écran, huit alertes sur huit fenêtres | `python -m tools.selftest --video ../../Video/generated_video.mp4 --hud aucun --tours 8` |
+| Le widget ne gêne pas, 1,29 contre 1,35 | `python -m tools.selftest --video ../../Video/generated_video.mp4 --hud widget --tours 8` |
+| Le panneau de réglages annule la détection, huit alertes tombent à zéro et le modèle répond « neutre » à 87-94 % | `python -m tools.selftest --video ../../Video/generated_video.mp4 --hud parametres --tours 8` |
+| Écart de 1,53 en lecture directe du fichier, d'où les 12 % que coûte l'acquisition par l'écran | `python -m tools.replay --video ../../Video/generated_video.mp4` |
+| Caractérisation des clips de démonstration, celui à retenir et ceux à éviter | `python -m tools.replay --video ../../Video/<clip>.mp4`, un passage par clip |
+
+### Tout enchaîner
+
+```bash
+python -m tools.crema_incongruence --summary summaryTable.csv --out .
+python -m tools.benchmark --labels crema_labels_strict.csv --media ../../crema-d --live --csv mesures_cremad_strict.csv
+python -m tools.benchmark --labels crema_labels.csv --media ../../crema-d --limit 400 --live --csv mesures_cremad_full.csv
+python -m tools.latency  --video ../../Video/generated_video.mp4 --windows 20 --captures 100 --json mesures_latence.json
+python -m tools.evaluate_corpus --corpus ../../Actor_04 --mode croise --live --csv mesures_ravdess.csv
+python -m tools.replay   --video ../../Video/generated_video.mp4
+python -m tools.selftest --video ../../Video/generated_video.mp4 --hud aucun      --tours 8
+python -m tools.selftest --video ../../Video/generated_video.mp4 --hud widget     --tours 8
+python -m tools.selftest --video ../../Video/generated_video.mp4 --hud parametres --tours 8
+```
+
+Comptez une bonne heure. Les deux passages de `benchmark` sont les plus longs, ils
+lancent une inférence vocale par extrait.
+
+### Quatre précautions, sans lesquelles les chiffres ne veulent rien dire
+
+**`--live` n'est pas optionnel.** Sans lui, les bancs cadrent les fenêtres sur les
+passages parlés et autorisent le recouvrement, ce qui embellit les résultats sans
+rien dire de l'usage réel. Le mode d'exploration existe pour comprendre le moteur,
+jamais pour publier.
+
+**L'intervalle de confiance ne se publie pas au-delà de deux décimales.** Il vient
+d'un rééchantillonnage aléatoire, sa troisième décimale bouge d'une exécution à
+l'autre.
+
+**La latence se mesure trois fois.** Les temps d'inférence dépendent de l'état
+thermique du processeur. Un passage unique décrit un instant, pas un régime, et
+c'est l'étendue observée qu'il faut rapporter.
+
+**`selftest` prend la main sur l'écran et sur le son.** Il ouvre une fenêtre et
+joue la bande son sur la sortie par défaut. Toute fenêtre passant par-dessus serait
+analysée à la place de la vidéo, il ne faut donc rien faire d'autre pendant la
+mesure.
+
+### Avant une démonstration
+
+```bash
+python -m tools.preflight                 # dépendances, modèles, configuration, audio, montre
+python -m tools.preflight --sans-ble      # si la montre n'est pas allumée
+```
+
+Si rien ne se détecte en séance alors que les bancs hors ligne détectent, la cause
+est presque toujours dans les deux entrées que les bancs ne touchent pas, les pixels
+et le loopback.
+
+```bash
+python -m tools.diagnose --zone 100,100,800,600     # le chemin visuel
+python -m tools.diagnose --audio                    # le chemin sonore
+```
+
+Le détail de chaque outil, ses options et les limites de chaque corpus sont dans
+`tools/README.md`.
 
 ## Configuration
 
@@ -213,8 +320,12 @@ Les quadrants sont déduits du **point mesuré**, pas du label :
   maillon le plus faible.
 - `FACE_MIN_CONFIDENCE` et `FACE_MIN_MARGIN` ont été réglés sur les 7 classes de
   l'ancien moteur ; ils n'ont pas été revalidés sur les 8 classes d'AffectNet.
-- Les seuils de gradation n'ont pas été calibrés sur un corpus annoté : il
-  n'existe pas de corpus public annoté en *dissonance* entre canaux.
+- Aucun corpus public n'annote la *dissonance* entre canaux. Un jeu étiqueté a
+  donc été dérivé de CREMA-D, en exploitant le fait que ses annotateurs ont noté
+  séparément l'image et le son. Les seuils ont été confrontés à ce jeu, et le seuil
+  retenu n'est pas l'optimum mesuré : 0,80 privilégie délibérément la sensibilité
+  sur la précision, là où 0,94 équilibrerait les deux. Ce jeu reste un dérivé, il
+  ne contient pas de dissonance clinique authentique.
 - L'image analysée est une recapture d'écran, donc doublement compressée.
 
 ## Technologies
