@@ -37,7 +37,7 @@ chiffres ne décriraient pas le dispositif tel qu'il tourne en séance.
 | Taux de détection par configuration d'émotions, répartition de la gradation | `python -m tools.evaluate_corpus --corpus ../../Actor_04 --mode croise --live` |
 | Distance mesurée en lecture directe d'un fichier | `python -m tools.replay --video ../../Video/generated_video.mp4` |
 | Coût de la chaîne d'acquisition, effet des calques du HUD | `python -m tools.selftest --video ... --hud aucun` puis `--hud parametres` |
-| Comptage des dissonances perçues dans CREMA-D | `python -m tools.crema_incongruence --responses finishedResponses.csv --out .` |
+| Comptage des dissonances perçues dans CREMA-D | `python -m tools.crema_incongruence --responses ../../crema-d/finishedResponses.csv --out .` |
 
 Les deux premières impriment l'aire sous la courbe et son intervalle de
 confiance, qui sont les chiffres de référence. L'intervalle vient d'un
@@ -241,35 +241,60 @@ enregistrement authentique**. C'est une dissonance naturelle, attestée par
 jugement humain, sans aucune manipulation du signal.
 
 ```bash
-# 1. étiquettes, ne nécessite que les CSV du dépôt, quelques Mo
-python -m tools.crema_incongruence --summary summaryTable.csv --out .
+# 0. clone du miroir GitLab SANS les médias (voir la section suivante)
+$env:GIT_LFS_SKIP_SMUDGE="1"
+git clone https://gitlab.com/cs-cooper-lab/crema-d-mirror.git crema-d
+
+# 1. étiquettes, ne nécessite que les CSV du clone, quelques Mo
+python -m tools.crema_incongruence --responses ../../crema-d/finishedResponses.csv --out .
 
 # 2. téléchargement des seuls clips étiquetés (~100 Mo au lieu de 7,5 Go)
-#    --repo pointe sur le clone du miroir GitLab, fait sans les médias
 python -m tools.crema_fetch --labels crema_labels.csv --repo ../../crema-d
 
 # 3. mesure sur les enregistrements réels
-python -m tools.benchmark --labels crema_labels.csv --media crema_media --degrade
+python -m tools.benchmark --labels crema_labels.csv --media ../../crema-d --degrade
 ```
+
+`--responses` plutôt que `--summary` : le miroir GitLab ne contient pas
+`processedResults/summaryTable.csv`, le script reconstruit donc les votes par
+condition depuis `finishedResponses.csv`, présent à la racine du clone. L'étape 1
+régénère `crema_labels.csv` à l'identique du fichier versionné dans `back/`.
 
 `--media` accepte l'arborescence de CREMA-D telle quelle (`VideoFlash/` pour la
 vidéo, `AudioWAV/` pour le son) ou un dossier plat.
 
 ### Où sont les vidéos de CREMA-D
 
-Deux distributions trompeuses circulent :
+Le dépôt d'origine sur GitHub a **épuisé son budget LFS**. Le clone ramène les CSV
+et les scripts, puis échoue sur les médias avec `batch response: This repository
+exceeded its LFS budget`. Ce n'est pas une erreur de votre côté.
 
-- **le miroir Kaggle** ne publie que le dossier `AudioWAV` : aucune vidéo ;
+Les auteurs maintiennent pour cette raison un **miroir GitLab**, qui sert bien les
+médias, et c'est le seul point d'entrée qui fonctionne :
+
+**https://gitlab.com/cs-cooper-lab/crema-d-mirror**
+
+Deux autres distributions circulent et font perdre du temps :
+
+- **le miroir Kaggle** ne publie que le dossier `AudioWAV`, aucune vidéo ;
 - **le ZIP du dépôt** (~24 Mo) ne contient que des pointeurs git-lfs à la place
   des médias, des fichiers de quelques centaines d'octets qui ne s'ouvrent pas.
 
-Les clips audio + image sont dans `VideoFlash/*.flv`. Trois façons de les avoir :
+Les clips audio + image sont dans `VideoFlash/*.flv`. Comme le corpus complet pèse
+7,5 Go, on clone toujours sans les médias, puis on décide quoi rapatrier :
 
-| Méthode | Volume | Durée |
+```bash
+$env:GIT_LFS_SKIP_SMUDGE="1"        # cmd : set GIT_LFS_SKIP_SMUDGE=1
+git clone https://gitlab.com/cs-cooper-lab/crema-d-mirror.git crema-d
+```
+
+| Ce qu'on rapatrie ensuite | Volume | Durée |
 |---|---|---|
-| `tools/crema_fetch.py` (seulement les clips étiquetés) | ~100 Mo | quelques minutes |
-| `git lfs clone` du miroir GitLab | 7,5 Go | ~1 h |
-| `git lfs pull -I "VideoFlash/*"` après un clone sans médias | ~5 Go | ~40 min |
+| `tools/crema_fetch.py`, seulement les clips étiquetés | ~100 Mo | quelques minutes |
+| `git lfs pull -I "VideoFlash/*"`, toutes les vidéos | ~5 Go | ~40 min |
+| clone sans `GIT_LFS_SKIP_SMUDGE`, le corpus entier | 7,5 Go | ~1 h |
+
+La première ligne suffit pour reproduire tous les chiffres du mémoire.
 
 Si OpenCV n'ouvre pas les `.flv`, une conversion unique suffit :
 

@@ -141,26 +141,83 @@ Toutes les commandes se lancent depuis `Projet/back`, environnement virtuel acti
 ### Se procurer les corpus
 
 Les corpus ne sont pas versionnés, ils pèsent trop lourd. Les étiquettes, elles, le
-sont : `crema_labels.csv` et `crema_labels_strict.csv` sont dans le dépôt, ce qui
-permet de retrouver exactement le même jeu d'évaluation.
+sont, et c'est ce qui rend les mesures reproductibles.
+
+#### CREMA-D
+
+**Ne clonez pas depuis GitHub.** Le dépôt d'origine a épuisé son budget LFS : le
+clone ramène bien les CSV et les scripts, puis échoue sur les médias avec
+`batch response: This repository exceeded its LFS budget`. Ce n'est pas une erreur
+de votre côté. Le miroir Kaggle, lui, ne publie que le dossier `AudioWAV`, donc
+aucune vidéo.
+
+Les auteurs maintiennent pour cette raison un miroir GitLab, qui sert bien les
+médias. C'est celui-ci qu'il faut utiliser :
+
+**https://gitlab.com/cs-cooper-lab/crema-d-mirror**
+
+Le corpus complet pèse 7,5 Go, les 7 442 clips y étant stockés en trois formats.
+L'évaluation n'en utilise que quelques centaines, il serait absurde de tout
+télécharger. La marche à suivre consiste donc à cloner **sans** les médias, puis à
+ne récupérer que les clips étiquetés.
 
 ```bash
-# CREMA-D : reconstruire les étiquettes à partir des votes d'annotateurs
-python -m tools.crema_incongruence --summary summaryTable.csv --out .
+# 1. clone léger : git lfs pose des pointeurs au lieu de télécharger les médias
+#    PowerShell
+$env:GIT_LFS_SKIP_SMUDGE="1"
+#    cmd.exe : set GIT_LFS_SKIP_SMUDGE=1
+#    bash    : export GIT_LFS_SKIP_SMUDGE=1
+git clone https://gitlab.com/cs-cooper-lab/crema-d-mirror.git crema-d
+```
 
-# puis ne télécharger que les clips étiquetés (~100 Mo au lieu de 7,5 Go)
+Sans cette variable, le clone déclenche le téléchargement des 7,5 Go et prend
+environ une heure. Avec elle, il descend à quelques dizaines de Mo et prend une
+minute : les fichiers de `VideoFlash/` sont alors des pointeurs de quelques
+centaines d'octets, qui ne s'ouvrent pas. C'est normal à ce stade.
+
+```bash
+# 2. reconstruire les étiquettes à partir des votes d'annotateurs
+python -m tools.crema_incongruence --responses ../../crema-d/finishedResponses.csv --out .
+
+# 3. ne récupérer que les médias des clips étiquetés (git lfs pull ciblé)
 python -m tools.crema_fetch --labels crema_labels.csv --repo ../../crema-d
 ```
 
-RAVDESS se récupère sur https://zenodo.org/records/1188976. Un seul dossier
-d'acteur suffit, `Actor_04` est celui qui a servi. Le décodage des noms de fichiers
-est expliqué dans `tools/README.md`.
+L'étape 2 est celle qui imprime le comptage publié, 3 678 enregistrements
+dissonants contre 3 764 congruents. Elle régénère `crema_labels.csv`,
+`crema_congruents.txt` et `crema_discordants.txt` **à l'identique** de ce qui est
+versionné ici, ce qui permet de vérifier que le jeu d'évaluation n'a pas bougé.
+
+L'option `--responses` n'est pas un détour. Le miroir GitLab ne contient pas
+`processedResults/summaryTable.csv`, contrairement à ce que laissent croire
+plusieurs distributions du corpus ; le script reconstruit donc les votes par
+condition directement depuis `finishedResponses.csv`, qui, lui, est bien à la
+racine du miroir.
+
+`crema_labels_strict.csv` n'est pas régénéré par cette commande. C'est le
+sous-ensemble de 344 clips réellement évalués, restreint aux enregistrements sur
+lesquels les annotateurs s'accordaient nettement, et il est versionné tel quel
+précisément pour qu'on n'ait pas à le reconstruire. C'est sur lui que porte l'aire
+sous la courbe de 0,808.
+
+Si OpenCV n'ouvre pas les `.flv`, une conversion unique suffit :
+
+```bash
+ffmpeg -i VideoFlash/NOM.flv -c:v libx264 -c:a aac VideoFlash/NOM.mp4
+```
+
+#### RAVDESS
+
+À récupérer sur https://zenodo.org/records/1188976. Un seul dossier d'acteur
+suffit, `Actor_04` est celui qui a servi. Le décodage des noms de fichiers, et la
+raison pour laquelle la moitié des fichiers est ignorée automatiquement, sont
+expliqués dans `tools/README.md`.
 
 ### Quelle commande donne quel chiffre
 
 | Ce qui est publié | Commande |
 |---|---|
-| Près d'un enregistrement sur deux perçu différemment selon le canal, soit 3 678 dissonants contre 3 764 congruents sur 7 442 | `python -m tools.crema_incongruence --summary summaryTable.csv --out .` |
+| Près d'un enregistrement sur deux perçu différemment selon le canal, soit 3 678 dissonants contre 3 764 congruents sur 7 442 | `python -m tools.crema_incongruence --responses ../../crema-d/finishedResponses.csv --out .` |
 | Aire sous la courbe 0,808 et son intervalle, 227 extraits exploitables sur 344, distances médianes 1,155 et 0,588, arbitrage 0,80 contre 0,94 | `python -m tools.benchmark --labels crema_labels_strict.csv --media ../../crema-d --live` |
 | Aire sous la courbe 0,639 sur le corpus entier, extraits ambigus compris | `python -m tools.benchmark --labels crema_labels.csv --media ../../crema-d --limit 400 --live` |
 | Délai de 3,45 s dont 446 ms de calcul, part du modèle vocal supérieure à 99 %, budget visage utilisé à moins de 7 %, 1,5 Go de mémoire et 10 % du processeur | `python -m tools.latency --video ../../Video/generated_video.mp4 --windows 20 --captures 100` |
@@ -174,7 +231,7 @@ est expliqué dans `tools/README.md`.
 ### Tout enchaîner
 
 ```bash
-python -m tools.crema_incongruence --summary summaryTable.csv --out .
+python -m tools.crema_incongruence --responses ../../crema-d/finishedResponses.csv --out .
 python -m tools.benchmark --labels crema_labels_strict.csv --media ../../crema-d --live --csv mesures_cremad_strict.csv
 python -m tools.benchmark --labels crema_labels.csv --media ../../crema-d --limit 400 --live --csv mesures_cremad_full.csv
 python -m tools.latency  --video ../../Video/generated_video.mp4 --windows 20 --captures 100 --json mesures_latence.json
